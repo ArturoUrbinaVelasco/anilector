@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AniLector — Anime · Manga · Libros</title>
+  <meta name="description" content="Busca anime, manga y libros; consulta episodios, capítulos y tomos en orden, y lee PDF/EPUB online o desde tu equipo." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+  <link rel="preconnect" href="https://api.jikan.moe" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <!-- Librerías de visor (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.93/epub.min.js" defer></script>
+</head>
+<body>
+  <!-- ======= HEADER ======= -->
+  <header class="app-header">
+    <div class="brand" id="brandHome" role="button" tabindex="0">
+      <span class="brand-icon">📚</span>
+      <span class="brand-name">AniLector</span>
+    </div>
+
+    <form id="searchForm" class="search-bar" autocomplete="off">
+      <input id="searchInput" type="search" data-i18n-placeholder="search.placeholder" placeholder="Busca anime, manga o libros…" />
+      <button type="submit" class="btn btn-primary" data-i18n="search.button">Buscar</button>
+      <button type="button" id="toggleFilters" class="btn btn-ghost" title="Filtros">⚙️ <span data-i18n="search.filters">Filtros</span></button>
+    </form>
+
+    <div class="header-actions">
+      <select id="langSelect" class="select-mini" title="Idioma / Language" aria-label="Idioma">
+        <option value="es">🇲🇽 ES</option>
+        <option value="en">🇺🇸 EN</option>
+      </select>
+      <select id="themeSelect" class="select-mini" title="Tema" aria-label="Tema">
+        <option value="dark" data-i18n="theme.dark">🌙 Oscuro</option>
+        <option value="light" data-i18n="theme.light">☀️ Claro</option>
+        <option value="midnight" data-i18n="theme.midnight">🌌 Medianoche</option>
+        <option value="sakura" data-i18n="theme.sakura">🌸 Sakura</option>
+        <option value="ocean" data-i18n="theme.ocean">🌊 Océano</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- ======= FILTROS ======= -->
+  <section id="filtersPanel" class="filters-panel hidden">
+    <div class="filter-group">
+      <label data-i18n="filter.genre">Género</label>
+      <select id="genreSelect"><option value="" data-i18n="filter.any">Cualquiera</option></select>
+    </div>
+    <div class="filter-group">
+      <label data-i18n="filter.year">Año</label>
+      <select id="yearSelect"><option value="" data-i18n="filter.any">Cualquiera</option></select>
+    </div>
+    <div class="filter-group">
+      <label data-i18n="filter.order">Ordenar por</label>
+      <select id="orderSelect">
+        <option value="relevance" data-i18n="order.relevance">Relevancia</option>
+        <option value="score" data-i18n="order.score">Calificación</option>
+        <option value="popularity" data-i18n="order.popularity">Popularidad</option>
+        <option value="newest" data-i18n="order.newest">Más reciente</option>
+        <option value="title" data-i18n="order.title">Título (A-Z)</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label data-i18n="filter.status">Estado</label>
+      <select id="statusSelect">
+        <option value="" data-i18n="filter.any">Cualquiera</option>
+        <option value="airing" data-i18n="status.ongoing">En emisión / publicación</option>
+        <option value="complete" data-i18n="status.finished">Finalizado</option>
+        <option value="upcoming" data-i18n="status.upcoming">Próximamente</option>
+      </select>
+    </div>
+    <button id="clearFilters" class="btn btn-ghost" data-i18n="filter.clear">Limpiar</button>
+  </section>
+
+  <!-- ======= NAVEGACIÓN PRINCIPAL ======= -->
+  <nav class="main-nav" role="tablist">
+    <button class="nav-tab active" data-view="search" data-cat="anime">🎬 <span data-i18n="nav.anime">Anime</span></button>
+    <button class="nav-tab" data-view="search" data-cat="manga">📖 <span data-i18n="nav.manga">Manga</span></button>
+    <button class="nav-tab" data-view="search" data-cat="books">📚 <span data-i18n="nav.books">Libros</span></button>
+    <button class="nav-tab" data-view="library">⭐ <span data-i18n="nav.library">Mi Biblioteca</span></button>
+    <button class="nav-tab" data-view="reader">👓 <span data-i18n="nav.reader">Visor</span></button>
+  </nav>
+
+  <!-- ======= VISTA: RESULTADOS ======= -->
+  <main id="viewSearch" class="view">
+    <div id="resultsInfo" class="results-info"></div>
+    <div id="resultsGrid" class="cards-grid"></div>
+    <div id="loadMoreWrap" class="load-more hidden">
+      <button id="loadMoreBtn" class="btn btn-primary" data-i18n="search.loadMore">Cargar más</button>
+    </div>
+    <div id="emptyState" class="empty-state">
+      <div class="empty-icon">🔎</div>
+      <h2 data-i18n="empty.title">Descubre tu próxima lectura</h2>
+      <p data-i18n="empty.text">Busca anime, manga o libros por nombre, o explora los más populares con los filtros.</p>
+      <button id="explorePopular" class="btn btn-primary" data-i18n="empty.explore">Ver populares</button>
+    </div>
+    <div id="loader" class="loader hidden"><div class="spinner"></div><span data-i18n="misc.loading">Cargando…</span></div>
+  </main>
+
+  <!-- ======= VISTA: BIBLIOTECA ======= -->
+  <main id="viewLibrary" class="view hidden">
+    <h2 class="view-title" data-i18n="library.title">⭐ Mi Biblioteca</h2>
+    <div class="library-filters">
+      <button class="chip active" data-libfilter="all" data-i18n="library.all">Todos</button>
+      <button class="chip" data-libfilter="pending" data-i18n="library.pending">Pendiente</button>
+      <button class="chip" data-libfilter="reading" data-i18n="library.reading">Leyendo / Viendo</button>
+      <button class="chip" data-libfilter="done" data-i18n="library.done">Completado</button>
+    </div>
+    <div id="libraryGrid" class="cards-grid"></div>
+    <div id="libraryEmpty" class="empty-state">
+      <div class="empty-icon">⭐</div>
+      <p data-i18n="library.empty">Aún no guardas nada. Usa el botón ⭐ en cualquier resultado.</p>
+    </div>
+  </main>
+
+  <!-- ======= VISTA: VISOR ======= -->
+  <main id="viewReader" class="view hidden">
+    <h2 class="view-title" data-i18n="reader.title">👓 Visor de documentos</h2>
+    <div class="reader-sources">
+      <div class="source-card">
+        <h3 data-i18n="reader.localTitle">📂 Desde tu equipo</h3>
+        <p data-i18n="reader.localText">PDF, EPUB, CBZ/ZIP (manga), imágenes o texto.</p>
+        <label class="btn btn-primary file-label">
+          <input id="fileInput" type="file" multiple accept=".pdf,.epub,.cbz,.zip,.txt,.md,image/*" hidden />
+          <span data-i18n="reader.chooseFile">Elegir archivos</span>
+        </label>
+        <div id="recentFiles" class="recent-files"></div>
+      </div>
+      <div class="source-card">
+        <h3 data-i18n="reader.urlTitle">🌐 Desde un enlace</h3>
+        <p data-i18n="reader.urlText">Pega la URL de un PDF o página para verla aquí mismo.</p>
+        <form id="urlForm" class="url-form">
+          <input id="urlInput" type="url" placeholder="https://…/documento.pdf" required />
+          <button class="btn btn-primary" type="submit" data-i18n="reader.open">Abrir</button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <!-- ======= MODAL: DETALLE ======= -->
+  <div id="detailModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card detail-card">
+      <button class="modal-close" data-close="detailModal">✕</button>
+      <div id="detailContent"></div>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: VISOR ======= -->
+  <div id="viewerModal" class="modal viewer-modal hidden" role="dialog" aria-modal="true">
+    <div class="viewer-shell">
+      <div class="viewer-toolbar">
+        <span id="viewerTitle" class="viewer-title">Documento</span>
+        <div class="viewer-controls" id="viewerControls">
+          <button id="vPrev" class="btn btn-ghost" title="Anterior">◀</button>
+          <span id="vPageInfo" class="page-info">–</span>
+          <button id="vNext" class="btn btn-ghost" title="Siguiente">▶</button>
+          <button id="vZoomOut" class="btn btn-ghost" title="Alejar">➖</button>
+          <button id="vZoomIn" class="btn btn-ghost" title="Acercar">➕</button>
+        </div>
+        <div class="viewer-actions">
+          <a id="vExternal" class="btn btn-ghost" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
+          <button class="btn btn-ghost modal-close" data-close="viewerModal">✕</button>
+        </div>
+      </div>
+      <div id="viewerBody" class="viewer-body"></div>
+    </div>
+  </div>
+
+  <!-- ======= TOAST ======= -->
+  <div id="toast" class="toast hidden"></div>
+
+  <footer class="app-footer">
+    <span data-i18n="footer.data">Datos: Jikan (MyAnimeList) · Open Library · Google Books</span>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
