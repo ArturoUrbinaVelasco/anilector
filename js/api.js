@@ -61,6 +61,7 @@ async function anilistQuery(query, variables) {
 const AL_MEDIA_FIELDS = `id siteUrl format status averageScore genres episodes chapters volumes isAdult
   title { romaji english native } coverImage { large extraLarge } startDate { year }
   description(asHtml: false) trailer { id site }
+  externalLinks { site url type language }
   relations { edges { relationType node { id type format siteUrl title { romaji english } } } }`;
 
 const AL_GENRES = [
@@ -163,7 +164,14 @@ async function alFetchNode(cat, id) {
     d.Media.trailer?.site === "youtube" && d.Media.trailer.id
       ? `https://www.youtube.com/embed/${d.Media.trailer.id}`
       : null;
-  n.external = [];
+  const links = d.Media.externalLinks || [];
+  n.streaming = links
+    .filter((l) => l.type === "STREAMING")
+    .map((l) => ({ site: l.site + (l.language ? ` (${l.language})` : ""), url: l.url }));
+  n.external = links
+    .filter((l) => l.type !== "STREAMING")
+    .map((l) => ({ name: l.site, url: l.url }))
+    .slice(0, 8);
   return n;
 }
 
@@ -340,7 +348,8 @@ export async function getDetail(item) {
         .filter((e) => e.type === item.cat)
         .map((e) => ({ mal_id: e.mal_id, name: e.name, url: e.url })),
     }));
-    full.external = (data.data.external || []).slice(0, 5);
+    full.external = (data.data.external || []).slice(0, 8);
+    full.streaming = (data.data.streaming || []).map((s) => ({ site: s.name, url: s.url }));
     full.trailer = data.data.trailer?.embed_url || null;
     return full;
   } catch (e) {
@@ -377,6 +386,8 @@ async function getBookDetail(item) {
       const v = d.items?.[0];
       if (v) {
         full.gbooks = {
+          id: v.id || null,
+          isbn: (v.volumeInfo?.industryIdentifiers || []).find((i) => i.type === "ISBN_13")?.identifier || null,
           preview: v.volumeInfo?.previewLink || null,
           webReader: v.accessInfo?.webReaderLink || null,
           pdf: v.accessInfo?.pdf?.isAvailable || false,

@@ -167,23 +167,70 @@ export async function openText(file, title) {
 }
 
 /* ---------- Iframe (páginas / lectores externos) ---------- */
-export function openIframe(url, title) {
+export function openIframe(url, title, { hint = true } = {}) {
   openModal(title || url, { showControls: false, external: url });
   state.mode = "iframe";
+  const wrap = document.createElement("div");
+  wrap.className = "iframe-wrap";
+  if (hint) {
+    // Muchos sitios bloquean la vista integrada (X-Frame-Options) y no hay
+    // evento fiable para detectarlo: mostramos una barra de ayuda permanente.
+    const bar = document.createElement("div");
+    bar.className = "viewer-hint";
+    bar.innerHTML = `<span>${t("reader.embedHint")}</span>
+      <a class="btn btn-primary btn-mini" href="${url}" target="_blank" rel="noopener">${t("reader.openTab")}</a>`;
+    wrap.appendChild(bar);
+  }
   const frame = document.createElement("iframe");
   frame.src = url;
-  frame.allow = "fullscreen";
+  frame.allow = "fullscreen; autoplay";
   frame.referrerPolicy = "no-referrer";
-  body().appendChild(frame);
+  wrap.appendChild(frame);
+  body().appendChild(wrap);
+}
 
-  // Si el sitio bloquea iframes no hay evento fiable: ofrecemos siempre salida.
-  const note = document.createElement("div");
-  note.className = "iframe-fallback";
-  note.style.display = "none";
-  note.innerHTML = `<p>${t("reader.iframeBlocked")}</p>
-    <a class="btn btn-primary" href="${url}" target="_blank" rel="noopener">${t("reader.openTab")}</a>`;
-  body().appendChild(note);
-  frame.addEventListener("error", () => { note.style.display = ""; });
+/* ---------- Lector embebido de Google Books ---------- */
+let gbApiReady = null;
+function loadGoogleBooksApi() {
+  if (gbApiReady) return gbApiReady;
+  gbApiReady = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://www.google.com/books/jsapi.js";
+    s.onload = () => {
+      try {
+        window.google.books.load();
+        window.google.books.setOnLoadCallback(() => resolve());
+      } catch (e) { reject(e); }
+    };
+    s.onerror = () => reject(new Error("Google Books API"));
+    document.head.appendChild(s);
+  });
+  return gbApiReady;
+}
+
+export async function openGoogleBook({ volumeId, isbn, previewUrl }, title) {
+  openModal(title, { showControls: false, external: previewUrl || null });
+  state.mode = "iframe";
+  const holder = document.createElement("div");
+  holder.id = "gbViewer";
+  holder.style.cssText = "width:100%;height:100%;background:#fff;border-radius:8px;";
+  body().appendChild(holder);
+  const fallback = () => {
+    body().innerHTML = `<div class="iframe-fallback"><p>${t("reader.iframeBlocked")}</p>
+      ${previewUrl ? `<a class="btn btn-primary" href="${previewUrl}" target="_blank" rel="noopener">${t("reader.openTab")}</a>` : ""}</div>`;
+  };
+  try {
+    await loadGoogleBooksApi();
+    const viewer = new window.google.books.DefaultViewer(holder);
+    const ids = [];
+    if (volumeId) ids.push(volumeId);
+    if (isbn) ids.push(`ISBN:${isbn}`);
+    const tryLoad = (i) => {
+      if (i >= ids.length) return fallback();
+      viewer.load(ids[i], () => tryLoad(i + 1));
+    };
+    tryLoad(0);
+  } catch (e) { fallback(); }
 }
 
 /* ---------- Router de archivos locales ---------- */

@@ -4,7 +4,7 @@
 import { t, setLang, getLang, applyTranslations } from "./i18n.js";
 import { search, getGenres, getDetail, buildOrder, onProviderChange } from "./api.js";
 import {
-  openLocalFiles, openUrl, openIframe, closeViewer, bindViewerControls,
+  openLocalFiles, openUrl, openIframe, openGoogleBook, closeViewer, bindViewerControls,
 } from "./viewer.js";
 
 /* ---------- estado ---------- */
@@ -209,8 +209,8 @@ async function openDetail(id) {
 
   if (d.cat === "book") {
     if (d.ia) actions.push(`<button class="btn btn-primary" data-readia="${esc(d.ia)}" data-title="${esc(d.title)}">${t("detail.readOnline")}</button>`);
-    else if (d.gbooks?.webReader && d.gbooks.viewability !== "NO_PAGES")
-      actions.push(`<button class="btn btn-primary" data-readurl="${esc(d.gbooks.webReader)}" data-title="${esc(d.title)}">${t("detail.readOnline")}</button>`);
+    else if ((d.gbooks?.id || d.gbooks?.isbn) && d.gbooks.viewability !== "NO_PAGES")
+      actions.push(`<button class="btn btn-primary" data-gbook="${esc(d.gbooks.id || "")}" data-isbn="${esc(d.gbooks.isbn || "")}" data-preview="${esc(d.gbooks.preview || "")}" data-title="${esc(d.title)}">${t("detail.readOnline")}</button>`);
     actions.push(`<a class="btn btn-ghost" href="${esc(d.url)}" target="_blank" rel="noopener">${t("detail.viewOL")} ↗</a>`);
     if (d.gbooks?.preview)
       actions.push(`<a class="btn btn-ghost" href="${esc(d.gbooks.preview)}" target="_blank" rel="noopener">${t("detail.viewGB")} ↗</a>`);
@@ -244,6 +244,14 @@ async function openDetail(id) {
       </div>
     </div>
     <div class="detail-actions">${actions.join("")}</div>
+    ${d.streaming?.length ? `
+      <div class="detail-section">
+        <h3>${d.cat === "anime" ? t("detail.whereWatch") : t("detail.whereRead")}</h3>
+        <div class="watch-links">
+          ${d.streaming.slice(0, 10).map((s) =>
+            `<button class="btn btn-ghost" data-readurl="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">▶ ${esc(s.site)}</button>`).join("")}
+        </div>
+      </div>` : ""}
     ${d.synopsis ? `<div class="detail-section"><h3>${t("detail.synopsis")}</h3><p class="detail-synopsis">${esc(d.synopsis)}</p></div>` : ""}
     ${d.cat !== "book" ? `
       <div class="detail-section">
@@ -264,6 +272,9 @@ async function openDetail(id) {
       openIframe(`https://archive.org/embed/${b.dataset.readia}`, b.dataset.title)));
   box.querySelectorAll("[data-readurl]").forEach((b) =>
     b.addEventListener("click", () => openIframe(b.dataset.readurl, b.dataset.title)));
+  box.querySelectorAll("[data-gbook]").forEach((b) =>
+    b.addEventListener("click", () =>
+      openGoogleBook({ volumeId: b.dataset.gbook || null, isbn: b.dataset.isbn || null, previewUrl: b.dataset.preview || null }, b.dataset.title)));
 
   $("orderBtn")?.addEventListener("click", async () => {
     const boxO = $("orderBox");
