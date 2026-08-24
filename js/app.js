@@ -2,7 +2,7 @@
    AniLector — controlador principal
    ============================================================ */
 import { t, setLang, getLang, applyTranslations } from "./i18n.js";
-import { search, getGenres, getDetail, buildOrder } from "./api.js";
+import { search, getGenres, getDetail, buildOrder, onProviderChange } from "./api.js";
 import {
   openLocalFiles, openUrl, openIframe, closeViewer, bindViewerControls,
 } from "./viewer.js";
@@ -47,7 +47,7 @@ function toggleLib(item) {
   if (i >= 0) { list.splice(i, 1); toast(t("library.removed")); }
   else {
     list.unshift({
-      id: item.id, sourceId: item.sourceId, cat: item.cat,
+      id: item.id, sourceId: item.sourceId, cat: item.cat, src: item.src || null,
       title: item.title, cover: item.cover, year: item.year,
       type: item.type, counts: item.counts, url: item.url,
       ia: item.ia || null, status: "pending", addedAt: new Date().toISOString(),
@@ -155,15 +155,17 @@ async function runSearch({ append = false } = {}) {
 }
 
 /* ---------- filtros ---------- */
+let genreReq = 0;
 async function loadGenres() {
   const sel = $("genreSelect");
+  const req = ++genreReq;
   sel.innerHTML = `<option value="">${t("filter.any")}</option>`;
   try {
     const genres = await getGenres(S.cat);
-    sel.insertAdjacentHTML(
-      "beforeend",
-      genres.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("")
-    );
+    if (req !== genreReq) return; // llegó una carga más reciente
+    sel.innerHTML =
+      `<option value="">${t("filter.any")}</option>` +
+      genres.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("");
   } catch (_) { /* sin géneros no pasa nada */ }
 }
 function loadYears() {
@@ -214,7 +216,7 @@ async function openDetail(id) {
       actions.push(`<a class="btn btn-ghost" href="${esc(d.gbooks.preview)}" target="_blank" rel="noopener">${t("detail.viewGB")} ↗</a>`);
   } else {
     if (d.trailer) actions.push(`<button class="btn btn-primary" data-readurl="${esc(d.trailer)}" data-title="${esc(d.title)} — Trailer">▶ Trailer</button>`);
-    actions.push(`<a class="btn btn-ghost" href="${esc(d.url)}" target="_blank" rel="noopener">${t("detail.viewMAL")} ↗</a>`);
+    actions.push(`<a class="btn btn-ghost" href="${esc(d.url)}" target="_blank" rel="noopener">${d.src === "al" ? t("detail.viewAL") : t("detail.viewMAL")} ↗</a>`);
     for (const ex of d.external || []) {
       if (/official/i.test(ex.name || "")) {
         actions.push(`<a class="btn btn-ghost" href="${esc(ex.url)}" target="_blank" rel="noopener">${t("detail.viewSite")} ↗</a>`);
@@ -452,6 +454,11 @@ function init() {
   const lang = getLang();
   $("langSelect").value = lang;
   setLang(lang);
+
+  onProviderChange(() => {
+    toast(t("misc.fallback"));
+    loadGenres();
+  });
 
   loadYears();
   loadGenres();

@@ -7,22 +7,164 @@
    ============================================================ */
 
 const JIKAN = "https://api.jikan.moe/v4";
+const ANILIST = "https://graphql.anilist.co";
 const OPENLIB = "https://openlibrary.org";
 const GBOOKS = "https://www.googleapis.com/books/v1";
 
+/* ---------- Proveedor de anime/manga con respaldo automático ----------
+   Primario: Jikan (MyAnimeList). Si falla (caída/504), se cambia
+   automáticamente a AniList por el resto de la sesión. */
+let animeProvider = "jikan";
+let providerChangeCb = null;
+export function onProviderChange(cb) { providerChangeCb = cb; }
+export function getProvider() { return animeProvider; }
+function switchToAniList() {
+  if (animeProvider !== "anilist") {
+    animeProvider = "anilist";
+    try { providerChangeCb?.(); } catch (_) {}
+  }
+}
+
 /* ---------- Cola con límite de velocidad para Jikan (3 req/s) ---------- */
 let lastJikan = 0;
-async function jikanFetch(path) {
+async function jikanFetch(path, retried = false) {
   const wait = Math.max(0, lastJikan + 420 - Date.now());
   lastJikan = Date.now() + wait;
   if (wait) await new Promise((r) => setTimeout(r, wait));
-  const res = await fetch(`${JIKAN}${path}`);
-  if (res.status === 429) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  let res;
+  try {
+    res = await fetch(`${JIKAN}${path}`, { signal: ctrl.signal });
+  } finally { clearTimeout(timer); }
+  if (res.status === 429 && !retried) {
     await new Promise((r) => setTimeout(r, 1200));
-    return jikanFetch(path);
+    return jikanFetch(path, true);
   }
   if (!res.ok) throw new Error(`Jikan ${res.status}`);
   return res.json();
+}
+
+/* ---------- Cliente GraphQL de AniList ---------- */
+async function anilistQuery(query, variables) {
+  const res = await fetch(ANILIST, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) throw new Error(`AniList ${res.status}`);
+  const d = await res.json();
+  if (d.errors?.length) throw new Error(d.errors[0].message || "AniList error");
+  return d.data;
+}
+
+const AL_MEDIA_FIELDS = `id siteUrl format status averageScore genres episodes chapters volumes isAdult
+  title { romaji english native } coverImage { large extraLarge } startDate { year }
+  description(asHtml: false) trailer { id site }
+  relations { edges { relationType node { id type format siteUrl title { romaji english } } } }`;
+
+const AL_GENRES = [
+  "Action", "Adventure", "Comedy", "Drama", "Fantasy", "Horror",
+  "Mahou Shoujo", "Mecha", "Music", "Mystery", "Psychological", "Romance",
+  "Sci-Fi", "Slice of Life", "Sports", "Supernatural", "Thriller",
+];
+
+const AL_REL = {
+  PREQUEL: "Prequel", SEQUEL: "Sequel", SIDE_STORY: "Side story",
+  ALTERNATIVE: "Alternative version", SPIN_OFF: "Spin-off", SUMMARY: "Summary",
+};
+
+function normAniList(m, cat) {
+  return {
+    id: `${cat}:al${m.id}`,
+    sourceId: m.id,
+    src: "al",
+    cat,
+    title: m.title?.english || m.title?.romaji || "?",
+    originalTitle: m.title?.native || "",
+    cover: m.coverImage?.extraLarge || m.coverImage?.large || "",
+    year: m.startDate?.year || null,
+    type: (m.format || "").replace(/_/g, " "),
+    score: m.averageScore ? Math.round(m.averageScore) / 10 : null,
+    status: m.status
+      ? m.status.charAt(0) + m.status.slice(1).toLowerCase().replace(/_/g, " ")
+      : "",
+    genres: m.genres || [],
+    counts: {
+      episodes: cat === "anime" ? m.episodes : null,
+      chapters: cat === "manga" ? m.chapters : null,
+      volumes: cat === "manga" ? m.volumes : null,
+    },
+    synopsis: (m.description || "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, ""),
+    url: m.siteUrl,
+    authors: [],
+    studios: [],
+  };
+}
+
+function alRelations(m, cat) {
+  const type = cat === "anime" ? "ANIME" : "MANGA";
+  const groups = {};
+  for (const e of m.relations?.edges || []) {
+    const rel = AL_REL[e.relationType];
+    if (!rel || (e.node?.type || "") !== type) continue;
+    (groups[rel] ||= []).push({
+      mal_id: e.node.id,
+      name: e.node.title?.english || e.node.title?.romaji || "?",
+      url: e.node.siteUrl,
+      type: cat,
+    });
+  }
+  return Object.entries(groups).map(([relation, entries]) => ({ relation, entries }));
+}
+
+async function searchAniList({ cat, q, genre, year, order, status, page = 1 }) {
+  const type = cat === "anime" ? "ANIME" : "MANGA";
+  const sortMap = {
+    score: "SCORE_DESC", popularity: "POPULARITY_DESC",
+    newest: "START_DATE_DESC", title: "TITLE_ROMAJI",
+  };
+  const sort = sortMap[order] || (q ? "SEARCH_MATCH" : "POPULARITY_DESC");
+  const stMap = { airing: "RELEASING", complete: "FINISHED", upcoming: "NOT_YET_RELEASED" };
+  const vars = { page, type, sort: [sort] };
+  if (q) vars.search = q;
+  if (genre && !/^\d+$/.test(String(genre))) vars.genre = genre;
+  if (year) {
+    vars.yGT = Number(`${Number(year) - 1}1231`);
+    vars.yLT = Number(`${Number(year) + 1}0101`);
+  }
+  if (status && stMap[status]) vars.status = stMap[status];
+  const data = await anilistQuery(
+    `query($page:Int,$type:MediaType,$search:String,$genre:String,$status:MediaStatus,$sort:[MediaSort],$yGT:FuzzyDateInt,$yLT:FuzzyDateInt){
+      Page(page:$page,perPage:24){
+        pageInfo{ hasNextPage total }
+        media(type:$type,search:$search,genre:$genre,status:$status,sort:$sort,isAdult:false,startDate_greater:$yGT,startDate_lesser:$yLT){ ${AL_MEDIA_FIELDS} }
+      }
+    }`,
+    vars
+  );
+  return {
+    items: (data.Page?.media || []).map((m) => normAniList(m, cat)),
+    hasMore: !!data.Page?.pageInfo?.hasNextPage,
+    total: data.Page?.pageInfo?.total ?? null,
+  };
+}
+
+async function alFetchNode(cat, id) {
+  const d = await anilistQuery(
+    `query($id:Int,$type:MediaType){ Media(id:$id,type:$type){ ${AL_MEDIA_FIELDS} } }`,
+    { id, type: cat === "anime" ? "ANIME" : "MANGA" }
+  );
+  const n = normAniList(d.Media, cat);
+  n.relations = alRelations(d.Media, cat);
+  n.trailer =
+    d.Media.trailer?.site === "youtube" && d.Media.trailer.id
+      ? `https://www.youtube.com/embed/${d.Media.trailer.id}`
+      : null;
+  n.external = [];
+  return n;
 }
 
 /* ---------- Géneros ---------- */
@@ -37,13 +179,19 @@ export async function getGenres(cat) {
       "children", "thriller", "drama", "classics", "art",
     ].map((s) => ({ id: s, name: s.replace(/\b\w/g, (c) => c.toUpperCase()) }));
   }
+  if (animeProvider === "anilist") return AL_GENRES.map((n) => ({ id: n, name: n }));
   if (genreCache[cat]) return genreCache[cat];
-  const data = await jikanFetch(`/genres/${cat}`);
-  const list = (data.data || [])
-    .filter((g) => !["Hentai", "Erotica"].includes(g.name))
-    .map((g) => ({ id: g.mal_id, name: g.name }));
-  genreCache[cat] = list;
-  return list;
+  try {
+    const data = await jikanFetch(`/genres/${cat}`);
+    const list = (data.data || [])
+      .filter((g) => !["Hentai", "Erotica"].includes(g.name))
+      .map((g) => ({ id: g.mal_id, name: g.name }));
+    genreCache[cat] = list;
+    return list;
+  } catch (e) {
+    switchToAniList();
+    return AL_GENRES.map((n) => ({ id: n, name: n }));
+  }
 }
 
 /* ---------- Normalización a un formato común ---------- */
@@ -98,9 +246,20 @@ function normOpenLib(d) {
 }
 
 /* ---------- Búsqueda ---------- */
-export async function search({ cat, q, genre, year, order, status, page = 1 }) {
+export async function search(args) {
+  const { cat, q, genre, year, order, status, page = 1 } = args;
   if (cat === "books") return searchBooks({ q, genre, year, order, page });
+  if (animeProvider === "anilist") return searchAniList(args);
+  try {
+    return await searchJikan({ cat, q, genre, year, order, status, page });
+  } catch (e) {
+    console.warn("Jikan falló; cambiando a AniList:", e.message);
+    switchToAniList();
+    return searchAniList(args);
+  }
+}
 
+async function searchJikan({ cat, q, genre, year, order, status, page }) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   params.set("page", page);
@@ -171,17 +330,26 @@ async function searchBooks({ q, genre, year, order, page }) {
 /* ---------- Detalle ---------- */
 export async function getDetail(item) {
   if (item.cat === "book") return getBookDetail(item);
-  const data = await jikanFetch(`/${item.cat}/${item.sourceId}/full`);
-  const full = normJikan(data.data, item.cat);
-  full.relations = (data.data.relations || []).map((r) => ({
-    relation: r.relation,
-    entries: r.entry
-      .filter((e) => e.type === item.cat)
-      .map((e) => ({ mal_id: e.mal_id, name: e.name, url: e.url })),
-  }));
-  full.external = (data.data.external || []).slice(0, 5);
-  full.trailer = data.data.trailer?.embed_url || null;
-  return full;
+  if (item.src === "al") return alFetchNode(item.cat, item.sourceId);
+  try {
+    const data = await jikanFetch(`/${item.cat}/${item.sourceId}/full`);
+    const full = normJikan(data.data, item.cat);
+    full.relations = (data.data.relations || []).map((r) => ({
+      relation: r.relation,
+      entries: r.entry
+        .filter((e) => e.type === item.cat)
+        .map((e) => ({ mal_id: e.mal_id, name: e.name, url: e.url })),
+    }));
+    full.external = (data.data.external || []).slice(0, 5);
+    full.trailer = data.data.trailer?.embed_url || null;
+    return full;
+  } catch (e) {
+    // Respaldo: buscar la misma obra en AniList por título
+    switchToAniList();
+    const { items } = await searchAniList({ cat: item.cat, q: item.title, page: 1 });
+    if (items[0]) return alFetchNode(item.cat, items[0].sourceId);
+    throw e;
+  }
 }
 
 async function getBookDetail(item) {
@@ -234,15 +402,17 @@ export async function buildOrder(item, onProgress) {
   const visited = new Set();
   const MAXN = 12; // tope de peticiones para respetar el límite de la API
 
-  async function fetchNode(malId) {
-    const data = await jikanFetch(`/${cat}/${malId}/full`);
-    const n = normJikan(data.data, cat);
-    n.relations = (data.data.relations || []).map((r) => ({
-      relation: r.relation,
-      entries: r.entry.filter((e) => e.type === cat),
-    }));
-    return n;
-  }
+  const fetchNode = item.src === "al"
+    ? (id) => alFetchNode(cat, id)
+    : async (malId) => {
+        const data = await jikanFetch(`/${cat}/${malId}/full`);
+        const n = normJikan(data.data, cat);
+        n.relations = (data.data.relations || []).map((r) => ({
+          relation: r.relation,
+          entries: r.entry.filter((e) => e.type === cat),
+        }));
+        return n;
+      };
 
   function pick(node, rel) {
     const g = (node.relations || []).find((r) => r.relation === rel);
