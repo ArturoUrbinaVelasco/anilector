@@ -33,6 +33,7 @@ function saveProgress(key, value) {
     const p = progress();
     p[key] = value;
     localStorage.setItem("anilector.progress", JSON.stringify(p));
+    window.dispatchEvent(new Event("anilector:datachanged"));
   } catch (_) {}
 }
 

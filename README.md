@@ -49,8 +49,32 @@ css/styles.css    # Estilos y 5 temas (variables CSS)
 js/app.js         # Controlador principal
 js/api.js         # Capa de datos (Jikan, Open Library, Google Books)
 js/viewer.js      # Visor PDF/EPUB/CBZ/imagen/texto/iframe
+js/auth.js        # Sesión con Google + sincronización en Drive
+js/config.js      # Configuración (Client ID de Google)
 js/i18n.js        # Traducciones ES/EN
 ```
+
+## 🔐 Inicio de sesión con Google (opcional)
+
+Con sesión iniciada, la app muestra tu nombre y foto, y **respalda tu biblioteca y progreso de lectura en tu propio Google Drive** (carpeta privada de la app), sincronizándolos entre dispositivos. No hay servidor de por medio: es OAuth de Google directo en tu navegador.
+
+Configuración (una sola vez, gratis, ~5 minutos):
+
+1. Entra a [Google Cloud Console](https://console.cloud.google.com/) con tu cuenta de Google y crea un proyecto (p. ej. `anilector`).
+2. Busca y habilita la **Google Drive API** (APIs y servicios → Biblioteca).
+3. En **APIs y servicios → Pantalla de consentimiento OAuth**: tipo *Externo*, nombre `AniLector`, tu correo de soporte. En *Audience/Público* agrega tu correo como **usuario de prueba** (o publica la app).
+4. En **APIs y servicios → Credenciales → Crear credenciales → ID de cliente de OAuth**: tipo *Aplicación web*, y en **Orígenes de JavaScript autorizados** agrega:
+   - `https://<tu-usuario>.github.io`
+   - `http://localhost:8080` (para pruebas locales)
+5. Copia el **ID de cliente** (termina en `.apps.googleusercontent.com`) y pégalo en `js/config.js`:
+
+```js
+export const GOOGLE_CLIENT_ID = "TU_ID.apps.googleusercontent.com";
+```
+
+6. Sube el cambio (`git add -A && git commit -m "config google" && git push`).
+
+Sin Client ID configurado, la app funciona normal, solo que sin sesión ni sincronización.
 
 ## 🔒 Privacidad
 

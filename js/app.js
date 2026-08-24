@@ -6,6 +6,7 @@ import { search, getGenres, getDetail, buildOrder, onProviderChange } from "./ap
 import {
   openLocalFiles, openUrl, openIframe, openGoogleBook, closeViewer, bindViewerControls,
 } from "./viewer.js";
+import { initAuth } from "./auth.js";
 
 /* ---------- estado ---------- */
 const S = {
@@ -39,6 +40,7 @@ function lib() {
 }
 function saveLib(list) {
   localStorage.setItem("anilector.library", JSON.stringify(list));
+  window.dispatchEvent(new Event("anilector:datachanged"));
 }
 function inLib(id) { return lib().some((x) => x.id === id); }
 function toggleLib(item) {
@@ -469,6 +471,11 @@ function init() {
   onProviderChange(() => {
     toast(t("misc.fallback"));
     loadGenres();
+  });
+
+  initAuth(() => {
+    if (S.view === "library") renderLibrary();
+    renderRecent();
   });
 
   loadYears();
