@@ -5,6 +5,7 @@
    - Open Library → libros (con lectura en línea vía Internet Archive)
    - Google Books → respaldo de libros
    ============================================================ */
+import { ANIME_SITES } from "./config.js";
 
 const JIKAN = "https://api.jikan.moe/v4";
 const ANILIST = "https://graphql.anilist.co";
@@ -408,6 +409,70 @@ export function filterEsEn(links) {
   return (links || []).filter(
     (l) => !l.language || /english|spanish|espa/i.test(String(l.language))
   );
+}
+
+// Top de sitios para VER anime (definidos en config.js, editables).
+export function animeWatchSites(title) {
+  const q = encodeURIComponent(title);
+  return ANIME_SITES.map((s) => ({
+    site: s.name,
+    language: s.lang,
+    url: s.url.replace("%s", q),
+    tpl: s.url,
+  }));
+}
+
+// Búsqueda de un episodio concreto en un sitio: reemplaza %s por
+// "<título> <n>" para acercar el resultado al capítulo pedido.
+export function episodeSearchUrl(site, title, n) {
+  const q = encodeURIComponent(`${title} ${n}`);
+  return site.tpl.replace("%s", q);
+}
+
+/* ---------- Listado de episodios (Jikan) ---------- */
+const episodesCache = {};
+export async function getEpisodes(item) {
+  if (item.cat !== "anime") return null;
+  const key = item.id;
+  if (episodesCache[key]) return episodesCache[key];
+
+  // AniList no expone lista detallada de episodios: se genera desde el conteo.
+  if (item.src === "al") {
+    const total = item.counts?.episodes || 0;
+    const list = Array.from({ length: total }, (_, i) => ({
+      number: i + 1, title: `Episodio ${i + 1}`, url: null,
+    }));
+    episodesCache[key] = list;
+    return list;
+  }
+
+  try {
+    const out = [];
+    let page = 1, hasNext = true;
+    while (hasNext && page <= 5) { // hasta ~500 episodios
+      const d = await jikanFetch(`/anime/${item.sourceId}/episodes?page=${page}`);
+      for (const e of d.data || []) {
+        out.push({
+          number: e.mal_id,
+          title: e.title || e.title_romanji || `Episodio ${e.mal_id}`,
+          url: e.url || null,
+        });
+      }
+      hasNext = !!d.pagination?.has_next_page;
+      page++;
+    }
+    if (!out.length && item.counts?.episodes) {
+      for (let i = 1; i <= item.counts.episodes; i++)
+        out.push({ number: i, title: `Episodio ${i}`, url: null });
+    }
+    episodesCache[key] = out;
+    return out;
+  } catch (e) {
+    const total = item.counts?.episodes || 0;
+    return Array.from({ length: total }, (_, i) => ({
+      number: i + 1, title: `Episodio ${i + 1}`, url: null,
+    }));
+  }
 }
 
 // Plataformas legales de lectura de manga con búsqueda directa del título.

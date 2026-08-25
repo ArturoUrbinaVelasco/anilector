@@ -4,7 +4,7 @@
 import { t, setLang, getLang, applyTranslations } from "./i18n.js";
 import {
   search, getGenres, getDetail, buildOrder, onProviderChange,
-  filterEsEn, mangaReadingSites,
+  filterEsEn, mangaReadingSites, animeWatchSites, episodeSearchUrl, getEpisodes,
 } from "./api.js";
 import {
   openLocalFiles, openUrl, openIframe, openGoogleBook, closeViewer, bindViewerControls,
@@ -250,26 +250,41 @@ async function openDetail(id) {
     </div>
     <div class="detail-actions">${actions.join("")}</div>
     ${(() => {
-      // Solo enlaces en español o inglés
-      let sites = filterEsEn(d.streaming);
-      if (d.cat === "manga") {
-        // Garantizar al menos 5 sitios de lectura (plataformas legales ES/EN)
+      if (d.cat === "book") return "";
+      const shortLang = (l) => l ? ` · ${String(l).replace(/english/i, "EN").replace(/spanish.*/i, "ES")}` : "";
+      let sites;
+      if (d.cat === "anime") {
+        // Top de sitios de config + oficiales ES/EN que reporte la API
+        sites = animeWatchSites(d.title);
+        const seen = new Set(sites.map((s) => s.site.toLowerCase()));
+        for (const s of filterEsEn(d.streaming)) {
+          if (!seen.has(s.site.toLowerCase())) { sites.push(s); seen.add(s.site.toLowerCase()); }
+        }
+        sites = sites.slice(0, 7);
+      } else {
+        sites = filterEsEn(d.streaming);
         const seen = new Set(sites.map((s) => { try { return new URL(s.url).hostname; } catch { return s.url; } }));
         for (const s of mangaReadingSites(d.title)) {
           let h; try { h = new URL(s.url).hostname; } catch { h = s.url; }
           if (!seen.has(h)) { sites.push(s); seen.add(h); }
         }
+        sites = sites.slice(0, 8);
       }
-      sites = sites.slice(0, d.cat === "manga" ? 8 : 10);
-      if (d.cat === "book" || !sites.length) return "";
-      const shortLang = (l) => l ? ` · ${String(l).replace(/english/i, "EN").replace(/spanish.*/i, "ES")}` : "";
+      if (!sites.length) return "";
+      const icon = d.cat === "anime" ? "▶" : "📖";
+      const episodesUI = d.cat === "anime" && (d.counts?.episodes || d.src !== "al") ? `
+        <div class="episodes-block">
+          <button class="btn btn-ghost" id="epToggle">📺 ${t("detail.episodesBtn")}</button>
+          <div id="epBox" class="hidden"></div>
+        </div>` : "";
       return `
       <div class="detail-section">
         <h3>${d.cat === "anime" ? t("detail.whereWatch") : t("detail.whereRead")}</h3>
-        <div class="watch-links">
-          ${sites.map((s) =>
-            `<button class="btn btn-ghost" data-readurl="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">${d.cat === "anime" ? "▶" : "📖"} ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
+        <div class="watch-links" id="watchLinks">
+          ${sites.map((s, i) =>
+            `<button class="btn ${i === 0 && d.cat === "anime" ? "btn-primary" : "btn-ghost"} watch-site" data-site="${i}" data-url="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">${icon} ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
         </div>
+        ${episodesUI}
       </div>`;
     })()}
     ${d.synopsis ? `<div class="detail-section"><h3>${t("detail.synopsis")}</h3><p class="detail-synopsis">${esc(d.synopsis)}</p></div>` : ""}
@@ -292,6 +307,65 @@ async function openDetail(id) {
       openIframe(`https://archive.org/embed/${b.dataset.readia}`, b.dataset.title)));
   box.querySelectorAll("[data-readurl]").forEach((b) =>
     b.addEventListener("click", () => openIframe(b.dataset.readurl, b.dataset.title)));
+
+  // --- Sitios "dónde verlo" + listado de episodios (solo anime) ---
+  const watchSites = d.cat === "anime" ? animeWatchSites(d.title).slice(0, 7) : [];
+  // completa con oficiales si el top no llena 7 (coincide con el render)
+  let activeSite = 0;
+  box.querySelectorAll(".watch-site").forEach((b) =>
+    b.addEventListener("click", () => {
+      const i = Number(b.dataset.site);
+      if (d.cat === "anime") {
+        // marcar como sitio activo para el listado de episodios
+        activeSite = i;
+        box.querySelectorAll(".watch-site").forEach((x) => {
+          x.classList.toggle("btn-primary", x === b);
+          x.classList.toggle("btn-ghost", x !== b);
+        });
+      }
+      openIframe(b.dataset.url, b.dataset.title);
+    }));
+
+  const epToggle = $("epToggle");
+  if (epToggle) {
+    epToggle.addEventListener("click", async () => {
+      const boxE = $("epBox");
+      if (!boxE.classList.contains("hidden") && boxE.dataset.loaded) {
+        boxE.classList.toggle("hidden");
+        return;
+      }
+      boxE.classList.remove("hidden");
+      if (boxE.dataset.loaded) return;
+      boxE.innerHTML = `<div class="loader"><div class="spinner"></div><span>${t("misc.loading")}</span></div>`;
+      const eps = await getEpisodes(d);
+      if (!eps || !eps.length) {
+        boxE.innerHTML = `<p class="detail-sub">${t("detail.noEpisodes")}</p>`;
+        boxE.dataset.loaded = "1";
+        return;
+      }
+      const sitesForEp = watchSites.length ? watchSites : animeWatchSites(d.title);
+      boxE.innerHTML = `
+        <p class="ep-hint">${t("detail.episodesHint")}</p>
+        <ol class="order-list ep-list">
+          ${eps.map((e) => `
+            <li class="order-item ep-item" data-n="${e.number}">
+              <span class="order-num">${e.number}</span>
+              <div class="order-info">
+                <div class="order-title">${esc(e.title)}</div>
+              </div>
+              <span class="ep-go">▶</span>
+            </li>`).join("")}
+        </ol>`;
+      boxE.dataset.loaded = "1";
+      boxE.querySelectorAll(".ep-item").forEach((li) =>
+        li.addEventListener("click", () => {
+          const n = li.dataset.n;
+          const site = sitesForEp[activeSite] || sitesForEp[0];
+          openIframe(episodeSearchUrl(site, d.title, n), `${d.title} — Ep. ${n} · ${site.site}`);
+        }));
+    });
+  }
+
   box.querySelectorAll("[data-gbook]").forEach((b) =>
     b.addEventListener("click", () =>
       openGoogleBook({ volumeId: b.dataset.gbook || null, isbn: b.dataset.isbn || null, previewUrl: b.dataset.preview || null }, b.dataset.title)));

@@ -476,6 +476,11 @@ body {
 }
 .btn-mini { padding: 0.25rem 0.8rem; font-size: 0.78rem; }
 .watch-links { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.episodes-block { margin-top: 0.8rem; }
+.ep-hint { font-size: 0.8rem; color: var(--text-dim); margin: 0.5rem 0 0.6rem; }
+.ep-list { max-height: 360px; overflow-y: auto; padding-right: 0.3rem; }
+.ep-item .ep-go { color: var(--accent); font-weight: 800; }
+.ep-item:hover .ep-go { transform: scale(1.2); }
 .viewer-body img.page-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; }
 .viewer-body .text-doc {
   max-width: 800px;
