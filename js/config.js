@@ -41,6 +41,38 @@ export const MANGA_SITES = [
 ];
 
 /* ------------------------------------------------------------
+   Sitios "Dónde leerlo" para LIBROS de dominio público (español primero).
+   Todos son legales y gratuitos: obras cuyos derechos ya expiraron o que
+   se publican con licencia libre.
+
+   Además de estos enlaces de búsqueda, la app busca el libro en Project
+   Gutenberg (API Gutendex) y, si lo encuentra, abre el EPUB DENTRO del
+   visor sin salir de AniLector.
+
+   ⚠️ Los buscadores de estos sitios no se pudieron comprobar desde el
+   entorno donde se programó esto. Si alguno abre vacío o da error, es
+   solo cuestión de corregir su URL AQUÍ (el resto del código no cambia).
+   Marcados con (?) los que conviene revisar primero.
+   ------------------------------------------------------------ */
+export const BOOK_SITES = [
+  { name: "Elejandría",        lang: "ES", url: "https://www.elejandria.com/buscar?q=%s" },
+  { name: "Textos.info",       lang: "ES", url: "https://www.textos.info/buscar?texto=%s" },      // (?)
+  { name: "Cervantes Virtual", lang: "ES", url: "https://www.cervantesvirtual.com/buscador/?q=%s" }, // (?)
+  { name: "Wikisource",        lang: "ES", url: "https://es.wikisource.org/w/index.php?search=%s" },
+  { name: "PlanetaLibro",      lang: "ES", url: "https://planetalibro.net/?s=%s" },               // (?)
+  { name: "Gutenberg",         lang: "ES/EN", url: "https://www.gutenberg.org/ebooks/search/?query=%s" },
+  { name: "Standard Ebooks",   lang: "EN", url: "https://standardebooks.org/ebooks?query=%s" },
+  { name: "Internet Archive",  lang: "ES/EN", url: "https://archive.org/search?query=%s" },
+  { name: "LibriVox 🔊",       lang: "ES/EN", url: "https://librivox.org/search?q=%s&search_form=advanced" },
+  { name: "Europeana",         lang: "ES/EN", url: "https://www.europeana.eu/es/search?query=%s" },
+  { name: "BNE Hispánica",     lang: "ES", url: "https://bdh.bne.es/bnesearch/Search.do?text=%s" }, // (?)
+  { name: "Ganso y Pulpo",     lang: "ES", url: "https://gansoypulpo.com/?s=%s" },                 // (?)
+  { name: "Google Libros",     lang: "ES/EN", url: "https://www.google.com/search?tbm=bks&q=%s" },
+];
+/* Cuántos botones de la lista de arriba se muestran en la ficha. */
+export const BOOK_SITES_SHOWN = 9;
+
+/* ------------------------------------------------------------
    Sitios que NO se dejan ver dentro de la app.
    Mandan cabeceras (X-Frame-Options / CSP frame-ancestors) que le
    prohíben al navegador mostrarlos dentro de otra página, y no existe

@@ -13,7 +13,7 @@ import { GOOGLE_CLIENT_ID } from "./config.js";
 const SCOPES =
   "openid email profile https://www.googleapis.com/auth/drive.appdata";
 const FILE_NAME = "anilector-datos.json";
-const KEYS = ["anilector.library", "anilector.progress", "anilector.recent", "anilector.seen", "anilector.sites"];
+const KEYS = ["anilector.library", "anilector.progress", "anilector.recent", "anilector.seen", "anilector.sites", "anilector.tvfavs"];
 
 let tokenClient = null;
 let accessToken = null;
@@ -132,6 +132,7 @@ function collectLocal() {
     recent: readKey(KEYS[2]) || [],
     seen: readKey(KEYS[3]) || {},
     sites: readKey(KEYS[4]) || [],
+    tvfavs: readKey(KEYS[5]) || [],
     updatedAt: Date.now(),
   };
 }
@@ -142,6 +143,7 @@ function applyMerged(m) {
     localStorage.setItem(KEYS[2], JSON.stringify(m.recent || []));
     localStorage.setItem(KEYS[3], JSON.stringify(m.seen || {}));
     localStorage.setItem(KEYS[4], JSON.stringify(m.sites || []));
+    localStorage.setItem(KEYS[5], JSON.stringify(m.tvfavs || []));
   } catch (_) {}
 }
 // Une los sitios favoritos de ambos equipos sin duplicar (clave: la URL).
@@ -183,6 +185,8 @@ function merge(remote, local) {
     recent: [...new Set([...(local.recent || []), ...(remote.recent || [])])].slice(0, 5),
     seen: mergeSeen(remote.seen || {}, local.seen || {}),
     sites: mergeSites(remote.sites, local.sites),
+    // Los canales favoritos se unen igual que los sitios: la clave es la URL.
+    tvfavs: mergeSites(remote.tvfavs, local.tvfavs),
     updatedAt: Date.now(),
   };
 }

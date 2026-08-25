@@ -4,15 +4,18 @@
 import { t, setLang, getLang, applyTranslations } from "./i18n.js";
 import {
   search, getGenres, getDetail, buildOrder, onProviderChange,
-  filterEsEn, mangaReadingSites, animeWatchSites, episodeSearchUrl, getEpisodes,
+  filterEsEn, mangaReadingSites, animeWatchSites, bookReadingSites, findGutenberg,
+  episodeSearchUrl, getEpisodes,
   getMangaChapters, getChapterPages, resolveExactLink, hasBackend,
 } from "./api.js";
 import {
-  openLocalFiles, openUrl, openIframe, openImages, openGoogleBook, closeViewer, bindViewerControls,
+  openLocalFiles, openUrl, openIframe, openImages, openGoogleBook, closeViewer,
+  bindViewerControls, openRemoteFile,
 } from "./viewer.js";
+import { BOOK_SITES_SHOWN } from "./config.js";
 import { initAuth } from "./auth.js";
-import { initTv, ensureTvLoaded, pauseTv } from "./tv.js";
-import { initYouTube } from "./youtube.js";
+import { initTv, ensureTvLoaded, pauseTv, countChannelMatches, applyChannelSearch } from "./tv.js";
+import { initYouTube, searchYouTubeFor } from "./youtube.js";
 import { initWebApps } from "./webapps.js";
 
 /* ---------- estado ---------- */
@@ -100,6 +103,13 @@ function isSeen(id, kind, n) {
   if (!e) return false;
   return !!(kind === "ch" ? e.chs?.[n] : e.eps?.[n]);
 }
+/* Cuánto llevas de una obra: marcados vs. total conocido. */
+function progressOf(e) {
+  const hechos = Object.keys(e.eps || {}).length + Object.keys(e.chs || {}).length;
+  const c = e.base?.counts || {};
+  const total = e.lastKind === "ch" ? (c.chapters || 0) : (c.episodes || 0);
+  return { hechos, total: total > 0 ? total : 0 };
+}
 function continueList() {
   const store = seenStore();
   return Object.entries(store)
@@ -116,14 +126,27 @@ function renderContinue() {
   sec.classList.toggle("hidden", items.length === 0);
   const kindLbl = (e) => e.lastKind === "ch"
     ? `${t("detail.chapter")} ${e.last}` : `Ep. ${e.last}`;
-  row.innerHTML = items.map((e) => `
+  row.innerHTML = items.map((e) => {
+    const p = progressOf(e);
+    return `
     <button class="continue-card" data-id="${esc(e.id)}" title="${esc(e.title)}">
       ${e.cover
         ? `<img class="continue-cover" loading="lazy" src="${esc(e.cover)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'continue-cover ph',textContent:'📖'}))" />`
         : `<div class="continue-cover ph">${e.cat === "anime" ? "🎬" : e.cat === "manga" ? "📖" : "📕"}</div>`}
+      ${p.total ? `<span class="continue-bar"><i style="width:${Math.round(p.hechos / p.total * 100)}%"></i></span>` : ""}
       <span class="continue-name">${esc(e.title)}</span>
-      <span class="continue-badge">▶ ${esc(kindLbl(e))}</span>
-    </button>`).join("");
+      <span class="continue-badge">▶ ${esc(kindLbl(e))}${p.total ? ` · ${p.hechos}/${p.total}` : ""}</span>
+      <button class="continue-del" data-del="${esc(e.id)}" title="${t("library.removeContinue")}">✕</button>
+    </button>`;
+  }).join("");
+  row.querySelectorAll("[data-del]").forEach((b) =>
+    b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const store = seenStore();
+      delete store[b.dataset.del];
+      saveSeen(store);
+      renderLibrary();
+    }));
   row.querySelectorAll(".continue-card").forEach((b) =>
     b.addEventListener("click", () => {
       const id = b.dataset.id;
@@ -232,6 +255,7 @@ async function runSearch({ append = false } = {}) {
     $("resultsGrid").insertAdjacentHTML("beforeend", items.map((i) => cardHTML(i)).join(""));
     $("resultsInfo").textContent =
       total != null ? `${total.toLocaleString()} ${t("misc.results")}` : "";
+    renderCrossLinks(q);
     $("loadMoreWrap").classList.toggle("hidden", !hasMore);
     if (!S.items.length) {
       $("emptyState").classList.remove("hidden");
@@ -244,6 +268,35 @@ async function runSearch({ append = false } = {}) {
   } finally {
     $("loader").classList.add("hidden");
   }
+}
+
+/* ---------- buscador único: puentes a TV y YouTube ----------
+   La barra de arriba busca anime/manga/libros, pero lo que escribes
+   muchas veces también existe como canal o como video. En vez de hacer
+   otra búsqueda pesada, se ofrecen atajos: los canales se cuentan sobre
+   la lista ya cargada (gratis) y YouTube solo se consulta si lo pides. */
+function renderCrossLinks(q) {
+  const box = $("crossLinks");
+  if (!box) return;
+  const query = String(q || "").trim();
+  if (!query) { box.innerHTML = ""; box.classList.add("hidden"); return; }
+
+  let canales = 0;
+  try { canales = countChannelMatches(query); } catch (_) {}
+
+  box.classList.remove("hidden");
+  box.innerHTML = `
+    ${canales ? `<button class="chip" id="crossTv">📺 ${canales} ${t("cross.channels")}</button>` : ""}
+    <button class="chip" id="crossYt">▶️ ${t("cross.youtube")}</button>`;
+  $("crossTv")?.addEventListener("click", () => {
+    showView("tv");
+    ensureTvLoaded();
+    applyChannelSearch(query);
+  });
+  $("crossYt")?.addEventListener("click", () => {
+    showView("yt");
+    searchYouTubeFor(query);
+  });
 }
 
 /* ---------- filtros ---------- */
@@ -337,8 +390,24 @@ async function openDetail(id) {
     </div>
     <div class="detail-actions">${actions.join("")}</div>
     ${(() => {
-      if (d.cat === "book") return "";
       const shortLang = (l) => l ? ` · ${String(l).replace(/english/i, "EN").replace(/spanish.*/i, "ES")}` : "";
+
+      // LIBROS: bibliotecas de dominio público. Arriba se inserta después
+      // el botón de Project Gutenberg si la obra está ahí (lectura dentro
+      // de la app); esto se resuelve aparte porque tarda una petición.
+      if (d.cat === "book") {
+        const bs = bookReadingSites(d.title, d.authors?.[0]).slice(0, BOOK_SITES_SHOWN);
+        return `
+        <div class="detail-section">
+          <h3>${t("detail.whereRead")}</h3>
+          <div id="gutenBox"></div>
+          <p class="ep-hint">${t("detail.publicDomain")}</p>
+          <div class="watch-links">
+            ${bs.map((s) =>
+              `<button class="btn btn-ghost watch-site" data-booksite data-url="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">📖 ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
+          </div>
+        </div>`;
+      }
       // Proveedores OFICIALES con licencia que reportan Jikan/AniList:
       // anime (Crunchyroll, Netflix, HIDIVE…) y también manga (MANGA Plus,
       // Azuki, Comikey… vía AniList): enlace EXACTO y legal a la ficha.
@@ -408,6 +477,32 @@ async function openDetail(id) {
   // Proveedores oficiales: abrir la ficha licenciada dentro del visor.
   box.querySelectorAll("[data-officialurl]").forEach((b) =>
     b.addEventListener("click", () => openIframe(b.dataset.officialurl, b.dataset.title)));
+
+  // Botones de bibliotecas de libros (abren la búsqueda del sitio)
+  box.querySelectorAll("[data-booksite]").forEach((b) =>
+    b.addEventListener("click", () => openIframe(b.dataset.url, b.dataset.title)));
+
+  // ¿Está en Project Gutenberg? Entonces se puede LEER aquí mismo.
+  if (d.cat === "book") {
+    findGutenberg(d.title, d.authors || []).then((g) => {
+      const boxG = $("gutenBox");
+      if (!boxG || !g || !(g.epub || g.html)) return;
+      const idioma = g.lang === "es" ? "🇪🇸" : g.lang === "en" ? "🇬🇧" : "🌐";
+      boxG.innerHTML = `
+        <div class="watch-official-wrap">
+          <span class="watch-official-label">✅ ${t("detail.gutenFound")}</span>
+          <div class="watch-official">
+            ${g.epub ? `<button class="btn btn-official" id="gutenRead">📗 ${t("detail.readHere")} ${idioma}</button>` : ""}
+            <a class="btn btn-ghost" href="${esc(g.page)}" target="_blank" rel="noopener">Gutenberg ↗</a>
+          </div>
+        </div>`;
+      $("gutenRead")?.addEventListener("click", () => {
+        // El EPUB vive en gutenberg.org, que no manda cabeceras CORS: se
+        // baja por el proxy del microservicio y se abre en el visor.
+        openRemoteFile(g.epub, `${d.title} — Gutenberg`, { fileName: `${g.id}.epub` });
+      });
+    }).catch(() => {});
+  }
 
   // --- Sitios "dónde ver/leer" + listado de episodios/capítulos ---
   const watchSites = d.cat === "anime"
@@ -540,6 +635,11 @@ async function openDetail(id) {
       const sitesForEp = watchSites.length ? watchSites : animeWatchSites(d.title);
       boxE.innerHTML = `
         <p class="ep-hint">${t("detail.episodesHint")}</p>
+        <div class="ep-bulk">
+          <button class="btn btn-ghost btn-mini" id="epAll">✓✓ ${t("detail.markAll")}</button>
+          <button class="btn btn-ghost btn-mini" id="epNone">✕ ${t("detail.markNone")}</button>
+          <span id="epProgress" class="ep-progress"></span>
+        </div>
         <ol class="order-list ep-list">
           ${eps.map((e) => `
             <li class="order-item ep-item ${isSeen(d.id, "ep", e.number) ? "is-seen" : ""}" data-n="${e.number}">
@@ -552,6 +652,32 @@ async function openDetail(id) {
             </li>`).join("")}
         </ol>`;
       boxE.dataset.loaded = "1";
+
+      // Contador de avance y marcado en bloque (una temporada de golpe).
+      const refreshProgress = () => {
+        const total = eps.length;
+        const vistos = boxE.querySelectorAll(".ep-item.is-seen").length;
+        const el = $("epProgress");
+        if (el) el.textContent = `${vistos}/${total}`;
+      };
+      refreshProgress();
+      $("epAll")?.addEventListener("click", () => {
+        boxE.querySelectorAll(".ep-item").forEach((li) => {
+          if (!li.classList.contains("is-seen")) {
+            li.classList.add("is-seen");
+            markSeen(d, "ep", li.dataset.n, true);
+          }
+        });
+        refreshProgress();
+      });
+      $("epNone")?.addEventListener("click", () => {
+        boxE.querySelectorAll(".ep-item").forEach((li) => {
+          li.classList.remove("is-seen");
+          markSeen(d, "ep", li.dataset.n, false);
+        });
+        refreshProgress();
+      });
+
       boxE.querySelectorAll(".ep-seen").forEach((btn) =>
         btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
@@ -559,6 +685,7 @@ async function openDetail(id) {
           const on = !li.classList.contains("is-seen");
           li.classList.toggle("is-seen", on);
           markSeen(d, "ep", li.dataset.n, on);
+          refreshProgress();
         }));
       boxE.querySelectorAll(".ep-item").forEach((li) =>
         li.addEventListener("click", async () => {

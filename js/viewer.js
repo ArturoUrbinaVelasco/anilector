@@ -27,6 +27,7 @@ const state = {
   epubRendition: null,
   mobiBook: null,
   archive: null,     // handle de libarchive abierto (hay que cerrarlo)
+  webtoon: false,    // tira vertical en vez de página a página
   blobUrls: new Set(),
   docKey: null,      // clave para recordar progreso
 };
@@ -154,6 +155,7 @@ export function closeViewer() {
   if (state.archive?.close) { try { state.archive.close(); } catch (_) {} }
   if (state.pdf?.destroy) { try { state.pdf.destroy(); } catch (_) {} }
   revokeAll();
+  document.getElementById("vWebtoon")?.remove();
   Object.assign(state, {
     mode: null, pdf: null, images: [], imgIndex: 0,
     epubRendition: null, mobiBook: null, archive: null, docKey: null,
@@ -338,12 +340,87 @@ export async function openImages(pages, title) {
   state.docKey = `img:${title}`;
   state.images = pages;
   state.imgIndex = Math.min(progress()[state.docKey]?.index || 0, Math.max(0, pages.length - 1));
+  try { state.webtoon = localStorage.getItem("anilector.webtoon") === "1"; } catch (_) { state.webtoon = false; }
+  addWebtoonToggle();
+  if (state.webtoon) return renderWebtoon();
   body().innerHTML = "";
   const img = document.createElement("img");
   img.className = "page-img";
   img.alt = "";
   body().appendChild(img);
   await renderImage();
+}
+
+/* Botón para alternar entre página a página y tira vertical. */
+function addWebtoonToggle() {
+  document.getElementById("vWebtoon")?.remove();
+  const btn = document.createElement("button");
+  btn.id = "vWebtoon";
+  btn.className = "btn btn-ghost";
+  btn.title = t("reader.webtoon");
+  btn.textContent = state.webtoon ? "📜" : "📄";
+  btn.addEventListener("click", () => {
+    state.webtoon = !state.webtoon;
+    try { localStorage.setItem("anilector.webtoon", state.webtoon ? "1" : "0"); } catch (_) {}
+    btn.textContent = state.webtoon ? "📜" : "📄";
+    if (state.webtoon) renderWebtoon();
+    else {
+      body().innerHTML = "";
+      const img = document.createElement("img");
+      img.className = "page-img";
+      body().appendChild(img);
+      renderImage();
+    }
+  });
+  controls().insertBefore(btn, document.getElementById("vZoomOut"));
+}
+
+/* Tira vertical continua (estilo webtoon). Las páginas se cargan según
+   se acercan a la pantalla, así una obra de 200 páginas abre igual de
+   rápido que una de 10. */
+function renderWebtoon() {
+  const idx0 = state.imgIndex;
+  body().innerHTML = `<div class="webtoon" id="webtoonStrip"></div>`;
+  const strip = document.getElementById("webtoonStrip");
+  strip.innerHTML = state.images.map((p, i) =>
+    `<div class="webtoon-page" data-i="${i}"><span class="webtoon-num">${i + 1}</span></div>`).join("");
+
+  const cargar = (slot) => {
+    const i = Number(slot.dataset.i);
+    if (slot.dataset.done) return;
+    slot.dataset.done = "1";
+    resolvePage(state.images[i]).then((url) => {
+      const img = document.createElement("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = url;
+      slot.appendChild(img);
+    }).catch(() => {
+      slot.dataset.done = "";
+      slot.classList.add("failed");
+    });
+  };
+
+  const io = new IntersectionObserver((ents) => {
+    for (const e of ents) {
+      if (e.isIntersecting) {
+        cargar(e.target);
+        // La página más visible define dónde te quedaste.
+        const i = Number(e.target.dataset.i);
+        if (e.intersectionRatio > 0.5 && i !== state.imgIndex) {
+          state.imgIndex = i;
+          pageInfo().textContent = `${i + 1} / ${state.images.length}`;
+          saveProgress(state.docKey, { index: i });
+        }
+      }
+    }
+  }, { root: body(), rootMargin: "800px 0px", threshold: [0, 0.51] });
+  strip.querySelectorAll(".webtoon-page").forEach((s) => io.observe(s));
+
+  pageInfo().textContent = `${idx0 + 1} / ${state.images.length}`;
+  // Retomar donde se quedó
+  const destino = strip.querySelector(`.webtoon-page[data-i="${idx0}"]`);
+  if (destino) setTimeout(() => destino.scrollIntoView({ block: "start" }), 60);
 }
 
 async function resolvePage(p) {
@@ -879,7 +956,7 @@ function showSharePageHelp(url, title) {
 
 /* Descarga el archivo (directo si CORS lo permite; si no, por el proxy)
    y lo abre con el visor que corresponda. */
-export async function openRemoteFile(url, title) {
+export async function openRemoteFile(url, title, { fileName = null } = {}) {
   openModal(title || url, { showControls: false, external: url });
   showLoader(t("reader.downloading"));
 
@@ -906,7 +983,10 @@ export async function openRemoteFile(url, title) {
 
   try {
     const blob = await res.blob();
-    const name = decodeURIComponent((url.split(/[?#]/)[0].split("/").pop() || "archivo"));
+    // `fileName` permite forzar la extensión cuando la URL no la trae
+    // (p. ej. los EPUB de Gutenberg acaban en ".epub3.images").
+    const name = fileName ||
+      decodeURIComponent((url.split(/[?#]/)[0].split("/").pop() || "archivo"));
     return await openLocalFile(new File([blob], name, { type: blob.type }));
   } catch (e) {
     return showError(`${t("reader.downloadFailed")} (${e.message})`, url);
@@ -933,7 +1013,13 @@ function nav(dir) {
     if (next >= 1 && next <= state.pdf.numPages) { state.page = next; renderPdfPage(); }
   } else if (state.mode === "images") {
     const next = state.imgIndex + dir;
-    if (next >= 0 && next < state.images.length) { state.imgIndex = next; renderImage(); }
+    if (next < 0 || next >= state.images.length) return;
+    state.imgIndex = next;
+    if (state.webtoon) {
+      document.querySelector(`.webtoon-page[data-i="${next}"]`)?.scrollIntoView({ block: "start" });
+      pageInfo().textContent = `${next + 1} / ${state.images.length}`;
+      saveProgress(state.docKey, { index: next });
+    } else renderImage();
   } else if (state.mode === "epub" && state.epubRendition) {
     dir > 0 ? state.epubRendition.next() : state.epubRendition.prev();
   }

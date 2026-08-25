@@ -453,6 +453,13 @@ async function openPlaylist(id, label) {
   });
 }
 
+/* Buscar desde fuera (lo usa el buscador único del encabezado). */
+export function searchYouTubeFor(q) {
+  const el = $("ytSearch");
+  if (el) el.value = q;
+  doSearch(q);
+}
+
 export function initYouTube() {
   $("ytForm").addEventListener("submit", (e) => {
     e.preventDefault();

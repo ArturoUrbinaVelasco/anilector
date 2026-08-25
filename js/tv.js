@@ -26,7 +26,7 @@ const hasProxy = () => !!userProxy() || isLocal || !!BACKEND_URL;
 const proxied = (url) => `${proxyBase()}/api/hls?url=${encodeURIComponent(url)}`;
 
 const $ = (id) => document.getElementById(id);
-const state = { listIndex: 0, channels: [], group: "", query: "", hls: null, mpegts: null, current: -1, view: [] };
+const state = { listIndex: 0, channels: [], group: "", query: "", hls: null, mpegts: null, current: -1, view: [], onlyFavs: false };
 const cache = {}; // url → channels[]
 const MAX_RENDER = 500;
 
@@ -88,12 +88,12 @@ async function loadList(i) {
   // Lista virtual "Mis canales"
   if (list.virtual) {
     state.channels = custom.channels.map((c) => ({ name: c.name, url: c.url, logo: "", group: "" }));
-    renderGroups(); renderChannels(); return;
+    renderGroups(); renderChannels(); renderResume(); return;
   }
 
   grid.innerHTML = `<div class="loader"><div class="spinner"></div><span>${t("misc.loading")}</span></div>`;
   $("tvInfo").textContent = "";
-  if (cache[list.url]) { state.channels = cache[list.url]; renderGroups(); renderChannels(); return; }
+  if (cache[list.url]) { state.channels = cache[list.url]; renderGroups(); renderChannels(); renderResume(); return; }
   async function fetchM3U(u) {
     const res = await fetch(u);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -112,6 +112,7 @@ async function loadList(i) {
     state.channels = channels;
     renderGroups();
     renderChannels();
+    renderResume();
   } catch (e) {
     grid.innerHTML = `<div class="empty-state">
       <div class="empty-icon">📡</div>
@@ -121,13 +122,81 @@ async function loadList(i) {
   }
 }
 
+/* ---------- canales favoritos (localStorage + Drive) ----------
+   Con 160 canales por lista, poder marcar los tuyos y tenerlos arriba es
+   la diferencia entre buscar cada vez y encender la tele. La clave es la
+   URL del stream, que es lo único estable entre listas. */
+export function favChannels() {
+  try {
+    const l = JSON.parse(localStorage.getItem("anilector.tvfavs") || "[]");
+    return Array.isArray(l) ? l : [];
+  } catch { return []; }
+}
+function saveFavs(list) {
+  localStorage.setItem("anilector.tvfavs", JSON.stringify(list));
+  window.dispatchEvent(new Event("anilector:datachanged"));
+}
+const favKey = (c) => String(c?.url || "").trim();
+function isFav(c) { const k = favKey(c); return favChannels().some((f) => f.url === k); }
+function toggleFav(c) {
+  const k = favKey(c);
+  if (!k) return;
+  const list = favChannels();
+  const i = list.findIndex((f) => f.url === k);
+  if (i >= 0) list.splice(i, 1);
+  else list.unshift({ url: k, name: c.name, logo: c.logo || "", group: c.group || "" });
+  saveFavs(list);
+}
+
+/* Último canal visto, para poder retomarlo al volver. */
+function rememberLast(c) {
+  try {
+    localStorage.setItem("anilector.tvlast",
+      JSON.stringify({ url: c.url, name: c.name, logo: c.logo || "", ts: Date.now() }));
+  } catch (_) {}
+}
+function lastChannel() {
+  try { return JSON.parse(localStorage.getItem("anilector.tvlast") || "null"); }
+  catch { return null; }
+}
+
+/* ---------- API para el buscador único del encabezado ---------- */
+// Cuántos canales de la lista cargada coinciden con el texto.
+export function countChannelMatches(q) {
+  const s = String(q || "").trim().toLowerCase();
+  if (!s) return 0;
+  return state.channels.filter((c) => c.name.toLowerCase().includes(s)).length;
+}
+// Abre TV con el buscador de canales ya relleno.
+export function applyChannelSearch(q) {
+  state.query = String(q || "").trim();
+  state.onlyFavs = false;
+  const el = $("tvSearch");
+  if (el) el.value = state.query;
+  $("tvOnlyFavs")?.classList.remove("active");
+  renderChannels();
+  highlightCurrent();
+}
+
 /* ---------- filtros ---------- */
 function filtered() {
   let ch = state.channels;
+  if (state.onlyFavs) {
+    const favs = new Set(favChannels().map((f) => f.url));
+    ch = ch.filter((c) => favs.has(favKey(c)));
+  }
   if (state.group) ch = ch.filter((c) => c.group === state.group);
   if (state.query) {
     const q = state.query.toLowerCase();
     ch = ch.filter((c) => c.name.toLowerCase().includes(q));
+  }
+  // Los favoritos primero (salvo que ya se esté filtrando solo por ellos).
+  if (!state.onlyFavs) {
+    const favs = new Set(favChannels().map((f) => f.url));
+    if (favs.size) {
+      const esFav = (c) => favs.has(favKey(c));
+      ch = [...ch].sort((a, b) => (esFav(b) ? 1 : 0) - (esFav(a) ? 1 : 0));
+    }
   }
   return ch;
 }
@@ -154,13 +223,18 @@ function renderChannels() {
     const logo = c.logo
       ? `<img class="tv-logo" loading="lazy" src="${esc(c.logo)}" alt="" onerror="this.style.visibility='hidden'" />`
       : `<div class="tv-logo tv-logo-fallback">📺</div>`;
-    return `<button class="tv-row ${c === state.channels[state.current] ? "active" : ""}" data-vi="${i}">
-      ${logo}
-      <span class="tv-row-info">
-        <span class="tv-name">${esc(c.name)}</span>
-        ${c.group ? `<span class="tv-group">${esc(c.group)}</span>` : ""}
-      </span>
-    </button>`;
+    const fav = isFav(c);
+    return `<div class="tv-row-wrap">
+      <button class="tv-row ${c === state.channels[state.current] ? "active" : ""}" data-vi="${i}">
+        ${logo}
+        <span class="tv-row-info">
+          <span class="tv-name">${esc(c.name)}</span>
+          ${c.group ? `<span class="tv-group">${esc(c.group)}</span>` : ""}
+        </span>
+      </button>
+      <button class="tv-fav ${fav ? "faved" : ""}" data-fav="${i}"
+        title="${fav ? t("tv.unfav") : t("tv.fav")}">${fav ? "★" : "☆"}</button>
+    </div>`;
   }).join("");
 }
 
@@ -168,6 +242,23 @@ function highlightCurrent() {
   const cur = state.channels[state.current];
   document.querySelectorAll("#tvGrid .tv-row").forEach((r) =>
     r.classList.toggle("active", state.view[Number(r.dataset.vi)] === cur));
+}
+
+/* Aviso para retomar el último canal que se estaba viendo. */
+function renderResume() {
+  const box = $("tvResume");
+  if (!box) return;
+  const last = lastChannel();
+  const idx = last ? state.channels.findIndex((c) => favKey(c) === last.url) : -1;
+  if (!last || idx < 0 || state.current === idx) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  box.innerHTML = `<button class="tv-resume-btn" data-resume="${idx}">
+      ▶ ${t("tv.resume")}: <b>${esc(last.name)}</b>
+    </button>`;
+  box.querySelector("[data-resume]").addEventListener("click", () => {
+    playIndex(idx);
+    box.classList.add("hidden");
+  });
 }
 
 /* ---------- reproductor ---------- */
@@ -205,6 +296,8 @@ function playIndex(idx, useProxy = null) {
   v.classList.add("playing");
   $("tvNow").textContent = channel.name + (useProxy ? " · 🛡️" : "");
   $("tvExternal").href = channel.url;
+  rememberLast(channel);
+  $("tvResume")?.classList.add("hidden");
   stopPlayback();
   highlightCurrent();
 
@@ -336,8 +429,22 @@ export function initTv() {
   $("tvSearch").addEventListener("input", (e) => { state.query = e.target.value.trim(); renderChannels(); });
   $("tvGroup").addEventListener("change", (e) => { state.group = e.target.value; renderChannels(); });
   $("tvGrid").addEventListener("click", (e) => {
+    const f = e.target.closest("[data-fav]");
+    if (f) {
+      e.stopPropagation();
+      toggleFav(state.view[Number(f.dataset.fav)]);
+      renderChannels();          // reordena: los favoritos suben
+      highlightCurrent();
+      return;
+    }
     const b = e.target.closest(".tv-row");
     if (b) playIndex(state.channels.indexOf(state.view[Number(b.dataset.vi)]));
+  });
+  $("tvOnlyFavs").addEventListener("click", () => {
+    state.onlyFavs = !state.onlyFavs;
+    $("tvOnlyFavs").classList.toggle("active", state.onlyFavs);
+    renderChannels();
+    highlightCurrent();
   });
   $("tvPrev").addEventListener("click", () => zap(-1));
   $("tvNext").addEventListener("click", () => zap(1));

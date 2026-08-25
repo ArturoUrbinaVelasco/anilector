@@ -5,7 +5,7 @@
    - Open Library → libros (con lectura en línea vía Internet Archive)
    - Google Books → respaldo de libros
    ============================================================ */
-import { ANIME_SITES, MANGA_SITES, BACKEND_URL } from "./config.js";
+import { ANIME_SITES, MANGA_SITES, BOOK_SITES, BACKEND_URL } from "./config.js";
 
 const JIKAN = "https://api.jikan.moe/v4";
 const ANILIST = "https://graphql.anilist.co";
@@ -585,6 +585,80 @@ export function mangaReadingSites(title) {
     url: s.url.replace("%s", q),
     tpl: s.url,
   }));
+}
+
+// Bibliotecas de dominio público para LEER libros (definidas en config.js).
+export function bookReadingSites(title, author) {
+  // Para libros, añadir el autor afina mucho la búsqueda: hay decenas de
+  // ediciones del mismo título y sin autor salen resultados sueltos.
+  const q = encodeURIComponent([searchQueryTitle(title), author].filter(Boolean).join(" ").trim());
+  return BOOK_SITES.map((s) => ({
+    site: s.name,
+    language: s.lang,
+    url: s.url.replace("%s", q),
+    tpl: s.url,
+  }));
+}
+
+/* ---------- Project Gutenberg (API Gutendex) ----------
+   ~75 000 libros de dominio público con JSON abierto y CORS. Sirve para
+   encontrar la obra EXACTA y abrir su EPUB dentro del visor, en vez de
+   solo mandar al usuario a buscar fuera.
+   Es una mejora "si se puede": ante cualquier fallo se devuelve null y la
+   ficha sigue mostrando los enlaces normales. */
+const GUTENDEX = "https://gutendex.com";
+const gutenCache = {};
+
+function normalizeForMatch(s) {
+  return String(s || "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")   // quita acentos
+    .toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export async function findGutenberg(title, authors = []) {
+  const key = `${title}|${authors[0] || ""}`;
+  if (gutenCache[key] !== undefined) return gutenCache[key];
+  try {
+    const author = authors[0] || "";
+    const q = [searchQueryTitle(title), author].filter(Boolean).join(" ");
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 9000);
+    const res = await fetch(`${GUTENDEX}/books?search=${encodeURIComponent(q)}`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`Gutendex ${res.status}`);
+    const d = await res.json();
+
+    const wanted = normalizeForMatch(searchQueryTitle(title));
+    const candidatos = (d.results || []).filter((b) => {
+      const t = normalizeForMatch(b.title);
+      return t.includes(wanted) || wanted.includes(t);
+    });
+    if (!candidatos.length) { gutenCache[key] = null; return null; }
+
+    // Español primero; si no, inglés; si no, el más descargado.
+    const rank = (b) => (b.languages?.includes("es") ? 0 : b.languages?.includes("en") ? 1 : 2);
+    candidatos.sort((a, b) => rank(a) - rank(b) || (b.download_count || 0) - (a.download_count || 0));
+    const best = candidatos[0];
+
+    const f = best.formats || {};
+    const epub = f["application/epub+zip"] || null;
+    const html = f["text/html"] || f["text/html; charset=utf-8"] || null;
+    const txt = Object.entries(f).find(([k]) => k.startsWith("text/plain"))?.[1] || null;
+    const out = {
+      id: best.id,
+      title: best.title,
+      author: best.authors?.[0]?.name || "",
+      lang: best.languages?.[0] || "",
+      epub, html, txt,
+      page: `https://www.gutenberg.org/ebooks/${best.id}`,
+    };
+    gutenCache[key] = out;
+    return out;
+  } catch (e) {
+    console.warn("Gutendex:", e.message);
+    gutenCache[key] = null;
+    return null;
+  }
 }
 
 /* ---------- MangaDex: capítulos reales por tomo con enlace exacto ----------

@@ -159,7 +159,9 @@
         <div class="tv-filters">
           <input id="tvSearch" type="search" data-i18n-placeholder="tv.searchPh" placeholder="Buscar canal…" class="tv-search" />
           <select id="tvGroup" class="select-mini"></select>
+          <button id="tvOnlyFavs" class="chip" title="Solo favoritos">★</button>
         </div>
+        <div id="tvResume" class="tv-resume hidden"></div>
         <span id="tvInfo" class="results-info"></span>
         <div id="tvGrid" class="tv-channel-list"></div>
       </aside>
@@ -174,25 +176,28 @@
       <input id="ytSearch" type="search" data-i18n-placeholder="yt.ph" placeholder="Buscar o pegar enlace de YouTube…" />
       <button class="btn btn-primary" type="submit" data-i18n="yt.search">Buscar</button>
     </form>
-    <div id="ytPlayer" class="tv-player hidden" style="margin-bottom:1rem">
-      <div class="tv-player-bar">
-        <span id="ytNow" class="tv-now">—</span>
-        <div class="tv-player-actions">
-          <label class="yt-auto" title="Reproducir el siguiente al terminar">
-            <input id="ytAutoplay" type="checkbox" checked />
-            <span data-i18n="yt.autoplay">Encadenar</span>
-          </label>
-          <button id="ytNext" class="btn btn-ghost btn-mini" title="Siguiente">⏭</button>
-          <a id="ytExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en YouTube">↗</a>
-          <button id="ytClose" class="btn btn-ghost btn-mini" title="Cerrar">✕</button>
+    <!-- El reproductor y la lista de «Siguientes» son HERMANOS a propósito:
+         así en el móvil el video puede quedarse fijo arriba mientras se
+         recorre la lista, sin que se lo lleve el desplazamiento. -->
+    <div class="yt-stage">
+      <div id="ytPlayer" class="tv-player hidden">
+        <div class="tv-player-bar">
+          <span id="ytNow" class="tv-now">—</span>
+          <div class="tv-player-actions">
+            <label class="yt-auto" title="Reproducir el siguiente al terminar">
+              <input id="ytAutoplay" type="checkbox" checked />
+              <span data-i18n="yt.autoplay">Encadenar</span>
+            </label>
+            <button id="ytNext" class="btn btn-ghost btn-mini" title="Siguiente">⏭</button>
+            <a id="ytExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en YouTube">↗</a>
+            <button id="ytClose" class="btn btn-ghost btn-mini" title="Cerrar">✕</button>
+          </div>
         </div>
-      </div>
-      <div class="yt-stage">
         <div class="tv-video-wrap">
           <div id="ytFrame"></div>
         </div>
-        <aside id="ytRelated" class="yt-related"></aside>
       </div>
+      <aside id="ytRelated" class="yt-related"></aside>
     </div>
     <div id="ytListHead" class="yt-list-head hidden"></div>
     <div id="ytGrid" class="cards-grid"></div>
@@ -236,6 +241,7 @@
       </div>
       <button class="chip chip-filters" id="toggleFiltersM" title="Filtros">⚙️</button>
     </div>
+    <div id="crossLinks" class="cross-links hidden"></div>
     <div id="resultsInfo" class="results-info"></div>
     <div id="resultsGrid" class="cards-grid"></div>
     <div id="loadMoreWrap" class="load-more hidden">
