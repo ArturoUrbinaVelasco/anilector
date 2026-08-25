@@ -17,6 +17,7 @@ import { initAuth } from "./auth.js";
 import { initTv, ensureTvLoaded, pauseTv, countChannelMatches, applyChannelSearch } from "./tv.js";
 import { initYouTube, searchYouTubeFor } from "./youtube.js";
 import { initWebApps } from "./webapps.js";
+import { initBrand } from "./brand.js";
 
 /* ---------- estado ---------- */
 const S = {
@@ -980,6 +981,7 @@ function init() {
   initTv();
   initYouTube();
   initWebApps();
+  initBrand();
 
   syncStickyOffsets();
   window.addEventListener("resize", syncStickyOffsets);

@@ -32,6 +32,7 @@
     </form>
 
     <div class="header-actions">
+      <button id="brandBtn" class="btn btn-ghost btn-mini" title="Personalizar logo y nombre">🎨</button>
       <div id="authArea" class="auth-area"></div>
       <select id="langSelect" class="select-mini" title="Idioma / Language" aria-label="Idioma">
         <option value="es">🇲🇽 ES</option>
@@ -348,6 +349,7 @@
       <div class="more-grab"></div>
       <button class="more-item" data-mview="web"><span>🌐</span><span data-i18n="nav.web">Sitios</span></button>
       <button class="more-item" data-mview="reader"><span>👓</span><span data-i18n="nav.reader">Visor</span></button>
+      <button class="more-item" id="brandBtnM"><span>🎨</span><span data-i18n="brand.title">Personalizar</span></button>
       <div class="more-sep"></div>
       <div class="more-row">
         <label data-i18n="more.lang">Idioma</label>
@@ -365,6 +367,47 @@
           <option value="sakura" data-i18n="theme.sakura">🌸 Sakura</option>
           <option value="ocean" data-i18n="theme.ocean">🌊 Océano</option>
         </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= MODAL: PERSONALIZAR ======= -->
+  <div id="brandModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card brand-card">
+      <button class="modal-close" id="brandClose">✕</button>
+      <h2 data-i18n="brand.title">🎨 Personalizar</h2>
+      <p class="tv-note" data-i18n="brand.note">Cambia el nombre y el logo de tu copia de la app. Se ve en el encabezado, en el título de la pestaña y en el icono.</p>
+
+      <div id="brandPreview" class="brand-preview"></div>
+
+      <div class="brand-field">
+        <label for="brandName" data-i18n="brand.name">Nombre</label>
+        <input id="brandName" type="text" maxlength="30" placeholder="AniLector" />
+      </div>
+      <div class="brand-field">
+        <label for="brandTagline" data-i18n="brand.tagline">Subtítulo de la pestaña</label>
+        <input id="brandTagline" type="text" maxlength="60" placeholder="Anime · Manga · Libros" />
+      </div>
+      <div class="brand-field">
+        <label for="brandEmoji" data-i18n="brand.emoji">Logo con emoji</label>
+        <input id="brandEmoji" type="text" maxlength="4" placeholder="📚" />
+      </div>
+      <div class="brand-field">
+        <label data-i18n="brand.image">…o una imagen tuya</label>
+        <div class="brand-actions">
+          <label class="btn btn-ghost file-label">
+            <input id="brandFile" type="file" accept="image/*" hidden />
+            <span data-i18n="brand.upload">Elegir imagen</span>
+          </label>
+          <button id="brandClear" class="btn btn-ghost" data-i18n="brand.clearImage">Quitar imagen</button>
+        </div>
+        <small class="brand-hint" data-i18n="brand.imageHint">Se reduce a 128 px para no ocupar espacio.</small>
+        <div id="brandMsg" class="brand-msg"></div>
+      </div>
+
+      <div class="brand-footer">
+        <button id="brandReset" class="btn btn-ghost" data-i18n="brand.reset">Restablecer</button>
+        <button id="brandSave" class="btn btn-primary" data-i18n="brand.save">Guardar</button>
       </div>
     </div>
   </div>

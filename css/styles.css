@@ -577,6 +577,49 @@ body {
 /* ---------- Buscador único: atajos a otras secciones ---------- */
 .cross-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.7rem; }
 
+/* ---------- Personalizar marca ---------- */
+.brand-icon { display: inline-flex; align-items: center; justify-content: center; }
+.brand-img { width: 1.6rem; height: 1.6rem; object-fit: contain; display: block; border-radius: 6px; }
+.brand-card { max-width: 520px; padding: 1.5rem; }
+.brand-card h2 { margin-bottom: 0.4rem; }
+.brand-preview {
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 14px;
+  padding: 1rem; margin: 1rem 0 1.2rem;
+}
+.brand-prev-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+.brand-prev-logo { font-size: 1.6rem; line-height: 1; display: inline-flex; }
+.brand-prev-logo img { width: 1.6rem; height: 1.6rem; object-fit: contain; border-radius: 6px; }
+.brand-prev-name {
+  font-size: 1.25rem; font-weight: 800; letter-spacing: 0.5px;
+  background: linear-gradient(120deg, var(--accent), var(--accent-soft));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.brand-prev-tab {
+  font-size: 0.8rem; color: var(--text-dim);
+  background: var(--bg-alt); border: 1px solid var(--border);
+  border-radius: 8px 8px 0 0; padding: 0.35rem 0.7rem;
+  display: inline-block; max-width: 100%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.brand-field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 1rem; }
+.brand-field label { font-size: 0.75rem; color: var(--text-dim); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.brand-field input[type="text"] {
+  padding: 0.55rem 0.8rem; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-soft);
+  color: var(--text); font-size: 0.95rem; outline: none;
+}
+.brand-field input[type="text"]:focus { border-color: var(--accent); }
+#brandEmoji { font-size: 1.3rem; max-width: 6rem; text-align: center; }
+.brand-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.brand-hint { color: var(--text-dim); font-size: 0.75rem; }
+.brand-msg { color: var(--danger); font-size: 0.8rem; }
+.brand-msg:empty { display: none; }
+.brand-footer { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.2rem; }
+@media (max-width: 720px) {
+  .brand-card { padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); }
+  .brand-footer .btn { flex: 1; justify-content: center; }
+}
+
 /* ---------- Progreso en «Continuar» ---------- */
 .continue-card { position: relative; }
 .continue-bar {
@@ -988,6 +1031,9 @@ body {
   .app-header { padding: 0.5rem 0.7rem; gap: 0.5rem; }
   .brand-name { display: none; }
   .app-header .select-mini { display: none; }
+  /* Personalizar vive en la hoja «Más» en móvil: en el encabezado
+     solo cabe lo imprescindible. */
+  #brandBtn { display: none; }
   .search-bar { order: 3; flex-basis: 100%; gap: 0.4rem; }
   .search-bar .btn-ghost { display: none; }   /* «Filtros» vive en la vista de búsqueda */
   .auth-btn-text { display: none; }
