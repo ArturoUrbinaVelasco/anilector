@@ -19,7 +19,7 @@ export const ANIME_SITES = [
   { name: "AnimeFLV",   lang: "ES", provider: "animeflv", url: "https://www3.animeflv.net/browse?q=%s" },
   { name: "TioAnime",   lang: "ES", provider: "tioanime", url: "https://tioanime.com/directorio?q=%s" },
   { name: "JKAnime",    lang: "ES", provider: "jkanime",  url: "https://jkanime.net/buscar/%s/" },
-  { name: "AnimeFénix", lang: "ES", url: "https://animefenix.tv/?s=%s" },
+  { name: "AnimeFénix", lang: "ES", url: "https://animefenix2.tv/directorio/anime?q=%s" },
   { name: "AnimeOnegai", lang: "ES", url: "https://www.animeonegai.com/es/search?q=%s" },
   { name: "Crunchyroll", lang: "ES/EN", url: "https://www.crunchyroll.com/es/search?q=%s" },
   { name: "HiAnime",    lang: "EN", url: "https://hianime.to/search?keyword=%s" },

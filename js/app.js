@@ -330,11 +330,11 @@ async function openDetail(id) {
     ${(() => {
       if (d.cat === "book") return "";
       const shortLang = (l) => l ? ` · ${String(l).replace(/english/i, "EN").replace(/spanish.*/i, "ES")}` : "";
-      // Proveedores OFICIALES con licencia (Crunchyroll, Netflix, HIDIVE, Bilibili…)
-      // que reportan Jikan/AniList: enlace EXACTO y legal a la ficha del título.
-      // Antes quedaban ocultos tras los sitios de config; ahora van primero.
+      // Proveedores OFICIALES con licencia que reportan Jikan/AniList:
+      // anime (Crunchyroll, Netflix, HIDIVE…) y también manga (MANGA Plus,
+      // Azuki, Comikey… vía AniList): enlace EXACTO y legal a la ficha.
       const official = [];
-      if (d.cat === "anime") {
+      {
         const seenOff = new Set();
         for (const s of filterEsEn(d.streaming || [])) {
           const k = s.site.toLowerCase();
@@ -351,7 +351,7 @@ async function openDetail(id) {
           <span class="watch-official-label">✅ ${t("detail.official")}</span>
           <div class="watch-official">
             ${official.map((s) =>
-              `<button class="btn btn-official" data-officialurl="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">▶ ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
+              `<button class="btn btn-official" data-officialurl="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">${icon} ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
           </div>
         </div>` : "";
       const listUI = d.cat === "anime"
@@ -674,7 +674,10 @@ function bindEvents() {
         const changed = S.cat !== b.dataset.cat;
         S.cat = b.dataset.cat;
         showView("search");
-        if (changed) await loadGenres();
+        // Sin await: loadGenres ya resetea el selector de inmediato y la
+        // búsqueda no debe esperar a los géneros (con Jikan lento dejaba
+        // los resultados de la categoría anterior en pantalla).
+        if (changed) loadGenres();
         if (changed || !S.items.length) runSearch();
       } else showView(b.dataset.view);
     }));

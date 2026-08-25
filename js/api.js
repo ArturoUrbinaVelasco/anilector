@@ -37,8 +37,16 @@ async function jikanFetch(path, retried = false) {
   let res;
   try {
     res = await fetch(`${JIKAN}${path}`, { signal: ctrl.signal });
+  } catch (e) {
+    // Falla de red/timeout: Jikan suele recuperarse al reintentar una vez.
+    if (!retried) {
+      await new Promise((r) => setTimeout(r, 1000));
+      return jikanFetch(path, true);
+    }
+    throw e;
   } finally { clearTimeout(timer); }
-  if (res.status === 429 && !retried) {
+  // 429 (límite) y 5xx (caída transitoria) también merecen UN reintento.
+  if ((res.status === 429 || res.status >= 500) && !retried) {
     await new Promise((r) => setTimeout(r, 1200));
     return jikanFetch(path, true);
   }
@@ -198,7 +206,10 @@ export async function getGenres(cat) {
     genreCache[cat] = list;
     return list;
   } catch (e) {
-    switchToAniList();
+    // OJO: una falla aislada al cargar géneros en el arranque NO debe
+    // cambiar toda la sesión a AniList (era la causa del aviso
+    // "MyAnimeList no responde" al iniciar). Se usa la lista estática
+    // como respaldo y Jikan conserva su oportunidad en la búsqueda.
     return AL_GENRES.map((n) => ({ id: n, name: n }));
   }
 }
@@ -274,7 +285,9 @@ async function searchJikan({ cat, q, genre, year, order, status, page }) {
   params.set("page", page);
   params.set("limit", 24);
   params.set("sfw", "true");
-  if (genre) params.set("genres", genre);
+  // Jikan solo acepta IDs numéricos de género; si el selector traía la
+  // lista de respaldo (nombres), se omite el filtro en vez de romper.
+  if (genre && /^\d+$/.test(String(genre))) params.set("genres", genre);
   if (year) {
     params.set("start_date", `${year}-01-01`);
     params.set("end_date", `${year}-12-31`);
@@ -336,6 +349,29 @@ async function searchBooks({ q, genre, year, order, page }) {
   };
 }
 
+/* Enlaces OFICIALES (con licencia) de un título vía AniList. Se usa para
+   MANGA aunque el proveedor activo sea Jikan, porque MyAnimeList no
+   reporta plataformas oficiales de lectura (MANGA Plus, Azuki, Comikey…). */
+const officialLinksCache = {};
+async function alOfficialLinks(type, title) {
+  const key = `${type}:${title}`;
+  if (officialLinksCache[key] !== undefined) return officialLinksCache[key];
+  try {
+    const d = await anilistQuery(
+      `query($search:String,$type:MediaType){ Media(search:$search,type:$type){ externalLinks { site url type language } } }`,
+      { search: title, type }
+    );
+    const links = (d.Media?.externalLinks || [])
+      .filter((l) => l.type === "STREAMING")
+      .map((l) => ({ site: l.site, url: l.url, language: l.language || "" }));
+    officialLinksCache[key] = links;
+    return links;
+  } catch (_) {
+    officialLinksCache[key] = [];
+    return [];
+  }
+}
+
 /* ---------- Detalle ---------- */
 export async function getDetail(item) {
   if (item.cat === "book") return getBookDetail(item);
@@ -351,6 +387,9 @@ export async function getDetail(item) {
     }));
     full.external = (data.data.external || []).slice(0, 8);
     full.streaming = (data.data.streaming || []).map((s) => ({ site: s.name, url: s.url }));
+    // MAL no trae plataformas de lectura para manga: completar con AniList.
+    if (item.cat === "manga" && !full.streaming.length)
+      full.streaming = await alOfficialLinks("MANGA", full.title);
     full.trailer = data.data.trailer?.embed_url || null;
     return full;
   } catch (e) {
@@ -411,9 +450,22 @@ export function filterEsEn(links) {
   );
 }
 
+/* Término CORTO para los buscadores de los sitios externos.
+   Los portales fallan con subtítulos largos (p.ej. AnimeFénix no
+   encuentra "Chainsaw Man – The Movie: Reze Arc" pero sí "Chainsaw Man").
+   Se corta en " – ", " — ", " - " o ": " (con espacios, para no romper
+   títulos tipo "Re:ZERO") si el tramo previo es suficientemente largo,
+   y se quita lo que va entre paréntesis. */
+export function searchQueryTitle(title) {
+  let s = String(title || "").replace(/\s*\([^)]*\)\s*/g, " ").trim();
+  const parts = s.split(/\s+[–—-]\s+|:\s+/);
+  if (parts.length > 1 && parts[0].trim().length >= 4) s = parts[0].trim();
+  return s;
+}
+
 // Top de sitios para VER anime (definidos en config.js, editables).
 export function animeWatchSites(title) {
-  const q = encodeURIComponent(title);
+  const q = encodeURIComponent(searchQueryTitle(title));
   return ANIME_SITES.map((s) => ({
     site: s.name,
     language: s.lang,
@@ -454,7 +506,7 @@ export async function resolveExactLink(provider, title) {
 // Búsqueda de un episodio concreto en un sitio: reemplaza %s por
 // "<título> <n>" para acercar el resultado al capítulo pedido.
 export function episodeSearchUrl(site, title, n) {
-  const q = encodeURIComponent(`${title} ${n}`);
+  const q = encodeURIComponent(`${searchQueryTitle(title)} ${n}`);
   return site.tpl.replace("%s", q);
 }
 
@@ -506,7 +558,7 @@ export async function getEpisodes(item) {
 
 // Top de sitios para LEER manga (definidos en config.js, español primero).
 export function mangaReadingSites(title) {
-  const q = encodeURIComponent(title);
+  const q = encodeURIComponent(searchQueryTitle(title));
   return MANGA_SITES.map((s) => ({
     site: s.name,
     language: s.lang,
