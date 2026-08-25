@@ -5,6 +5,7 @@ import { t, setLang, getLang, applyTranslations } from "./i18n.js";
 import {
   search, getGenres, getDetail, buildOrder, onProviderChange,
   filterEsEn, mangaReadingSites, animeWatchSites, episodeSearchUrl, getEpisodes,
+  getMangaChapters, resolveExactLink, hasBackend,
 } from "./api.js";
 import {
   openLocalFiles, openUrl, openIframe, openGoogleBook, closeViewer, bindViewerControls,
@@ -252,39 +253,34 @@ async function openDetail(id) {
     ${(() => {
       if (d.cat === "book") return "";
       const shortLang = (l) => l ? ` · ${String(l).replace(/english/i, "EN").replace(/spanish.*/i, "ES")}` : "";
-      let sites;
-      if (d.cat === "anime") {
-        // Top de sitios de config + oficiales ES/EN que reporte la API
-        sites = animeWatchSites(d.title);
-        const seen = new Set(sites.map((s) => s.site.toLowerCase()));
-        for (const s of filterEsEn(d.streaming)) {
-          if (!seen.has(s.site.toLowerCase())) { sites.push(s); seen.add(s.site.toLowerCase()); }
-        }
-        sites = sites.slice(0, 7);
-      } else {
-        sites = filterEsEn(d.streaming);
-        const seen = new Set(sites.map((s) => { try { return new URL(s.url).hostname; } catch { return s.url; } }));
-        for (const s of mangaReadingSites(d.title)) {
-          let h; try { h = new URL(s.url).hostname; } catch { h = s.url; }
-          if (!seen.has(h)) { sites.push(s); seen.add(h); }
-        }
-        sites = sites.slice(0, 8);
+      // Top 7 de sitios (config) + oficiales ES/EN que reporte la API
+      let sites = d.cat === "anime" ? animeWatchSites(d.title) : mangaReadingSites(d.title);
+      const seen = new Set(sites.map((s) => s.site.toLowerCase()));
+      for (const s of filterEsEn(d.streaming)) {
+        if (!seen.has(s.site.toLowerCase())) { sites.push(s); seen.add(s.site.toLowerCase()); }
       }
+      sites = sites.slice(0, 7);
       if (!sites.length) return "";
       const icon = d.cat === "anime" ? "▶" : "📖";
-      const episodesUI = d.cat === "anime" && (d.counts?.episodes || d.src !== "al") ? `
-        <div class="episodes-block">
-          <button class="btn btn-ghost" id="epToggle">📺 ${t("detail.episodesBtn")}</button>
-          <div id="epBox" class="hidden"></div>
-        </div>` : "";
+      const listUI = d.cat === "anime"
+        ? ((d.counts?.episodes || d.src !== "al") ? `
+          <div class="episodes-block">
+            <button class="btn btn-ghost" id="epToggle">📺 ${t("detail.episodesBtn")}</button>
+            <div id="epBox" class="hidden"></div>
+          </div>` : "")
+        : `
+          <div class="episodes-block">
+            <button class="btn btn-ghost" id="chToggle">📚 ${t("detail.chaptersBtn")}</button>
+            <div id="chBox" class="hidden"></div>
+          </div>`;
       return `
       <div class="detail-section">
         <h3>${d.cat === "anime" ? t("detail.whereWatch") : t("detail.whereRead")}</h3>
         <div class="watch-links" id="watchLinks">
           ${sites.map((s, i) =>
-            `<button class="btn ${i === 0 && d.cat === "anime" ? "btn-primary" : "btn-ghost"} watch-site" data-site="${i}" data-url="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">${icon} ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
+            `<button class="btn ${i === 0 ? "btn-primary" : "btn-ghost"} watch-site" data-site="${i}" data-url="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">${icon} ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
         </div>
-        ${episodesUI}
+        ${listUI}
       </div>`;
     })()}
     ${d.synopsis ? `<div class="detail-section"><h3>${t("detail.synopsis")}</h3><p class="detail-synopsis">${esc(d.synopsis)}</p></div>` : ""}
@@ -308,23 +304,90 @@ async function openDetail(id) {
   box.querySelectorAll("[data-readurl]").forEach((b) =>
     b.addEventListener("click", () => openIframe(b.dataset.readurl, b.dataset.title)));
 
-  // --- Sitios "dónde verlo" + listado de episodios (solo anime) ---
-  const watchSites = d.cat === "anime" ? animeWatchSites(d.title).slice(0, 7) : [];
-  // completa con oficiales si el top no llena 7 (coincide con el render)
+  // --- Sitios "dónde ver/leer" + listado de episodios/capítulos ---
+  const watchSites = d.cat === "anime"
+    ? animeWatchSites(d.title).slice(0, 7)
+    : d.cat === "manga" ? mangaReadingSites(d.title).slice(0, 7) : [];
   let activeSite = 0;
+  const resolved = {}; // provider → {animeUrl, episodeTemplate} | null (ya consultado)
+
   box.querySelectorAll(".watch-site").forEach((b) =>
-    b.addEventListener("click", () => {
+    b.addEventListener("click", async () => {
       const i = Number(b.dataset.site);
-      if (d.cat === "anime") {
-        // marcar como sitio activo para el listado de episodios
-        activeSite = i;
-        box.querySelectorAll(".watch-site").forEach((x) => {
-          x.classList.toggle("btn-primary", x === b);
-          x.classList.toggle("btn-ghost", x !== b);
-        });
+      const s = watchSites[i];
+      // marcar sitio activo (para el listado de episodios/capítulos)
+      activeSite = i;
+      box.querySelectorAll(".watch-site").forEach((x) => {
+        x.classList.toggle("btn-primary", x === b);
+        x.classList.toggle("btn-ghost", x !== b);
+      });
+      // Con backend + proveedor de anime: abrir el ENLACE EXACTO.
+      if (s && s.provider && d.cat === "anime" && hasBackend()) {
+        if (resolved[s.provider] === undefined) {
+          const prev = b.textContent;
+          b.textContent = "⏳ " + t("misc.loading");
+          resolved[s.provider] = await resolveExactLink(s.provider, d.title);
+          b.textContent = prev;
+        }
+        const r = resolved[s.provider];
+        if (r?.animeUrl) return openIframe(r.animeUrl, b.dataset.title);
       }
-      openIframe(b.dataset.url, b.dataset.title);
+      openIframe(b.dataset.url, b.dataset.title); // respaldo: búsqueda
     }));
+
+  // --- Listado de capítulos de manga (MangaDex, enlace exacto) ---
+  const chToggle = $("chToggle");
+  if (chToggle) {
+    chToggle.addEventListener("click", async () => {
+      const boxC = $("chBox");
+      if (!boxC.classList.contains("hidden") && boxC.dataset.loaded) { boxC.classList.add("hidden"); return; }
+      boxC.classList.remove("hidden");
+      if (boxC.dataset.loaded) return;
+      boxC.innerHTML = `<div class="loader"><div class="spinner"></div><span>${t("misc.loading")}</span></div>`;
+      const chapters = await getMangaChapters(d);
+      if (!chapters || !chapters.length) {
+        boxC.innerHTML = `<p class="detail-sub">${t("detail.noChapters")}</p>`;
+        boxC.dataset.loaded = "1";
+        return;
+      }
+      // Agrupar por tomo
+      const groups = new Map();
+      for (const c of chapters) {
+        const v = c.volume ? `${t("detail.volume")} ${c.volume}` : t("detail.noVolume");
+        if (!groups.has(v)) groups.set(v, []);
+        groups.get(v).push(c);
+      }
+      const flag = (l) => (l === "es" || l === "es-la" ? "🇪🇸" : l === "en" ? "🇬🇧" : "🌐");
+      boxC.innerHTML = `
+        <p class="ep-hint">${t("detail.chaptersHint")}</p>
+        ${[...groups.entries()].map(([vol, chs]) => `
+          <div class="vol-group">
+            <div class="vol-title">📦 ${esc(vol)}</div>
+            <ol class="order-list ep-list">
+              ${chs.map((c) => `
+                <li class="order-item ep-item" data-url="${esc(c.url)}" data-n="${esc(c.chapter)}">
+                  <span class="order-num">${esc(c.chapter)}</span>
+                  <div class="order-info">
+                    <div class="order-title">${flag(c.lang)} ${esc(c.title || `${t("detail.chapter")} ${c.chapter}`)}</div>
+                  </div>
+                  <span class="ep-go">📖</span>
+                </li>`).join("")}
+            </ol>
+          </div>`).join("")}`;
+      boxC.dataset.loaded = "1";
+      boxC.querySelectorAll(".ep-item").forEach((li) =>
+        li.addEventListener("click", () => {
+          const site = watchSites[activeSite] || watchSites[0];
+          // MangaDex → enlace exacto del capítulo; otro sitio → su búsqueda
+          if (site?.provider === "mangadex" || !site) {
+            openIframe(li.dataset.url, `${d.title} — ${t("detail.chapter")} ${li.dataset.n}`);
+          } else {
+            openIframe(episodeSearchUrl(site, d.title, li.dataset.n),
+              `${d.title} — ${t("detail.chapter")} ${li.dataset.n} · ${site.site}`);
+          }
+        }));
+    });
+  }
 
   const epToggle = $("epToggle");
   if (epToggle) {
@@ -358,10 +421,22 @@ async function openDetail(id) {
         </ol>`;
       boxE.dataset.loaded = "1";
       boxE.querySelectorAll(".ep-item").forEach((li) =>
-        li.addEventListener("click", () => {
+        li.addEventListener("click", async () => {
           const n = li.dataset.n;
           const site = sitesForEp[activeSite] || sitesForEp[0];
-          openIframe(episodeSearchUrl(site, d.title, n), `${d.title} — Ep. ${n} · ${site.site}`);
+          const title = `${d.title} — Ep. ${n} · ${site.site}`;
+          // Con backend + proveedor: enlace EXACTO del episodio.
+          if (site.provider && hasBackend()) {
+            if (resolved[site.provider] === undefined) {
+              li.querySelector(".ep-go").textContent = "⏳";
+              resolved[site.provider] = await resolveExactLink(site.provider, d.title);
+              li.querySelector(".ep-go").textContent = "▶";
+            }
+            const r = resolved[site.provider];
+            if (r?.episodeTemplate)
+              return openIframe(r.episodeTemplate.replace("{n}", n), title);
+          }
+          openIframe(episodeSearchUrl(site, d.title, n), title); // respaldo
         }));
     });
   }

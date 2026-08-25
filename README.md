@@ -9,6 +9,7 @@ Aplicación web **responsiva, multilenguaje (ES/EN) y con temas** para buscar **
 - 🔎 **Búsqueda web** de anime y manga (Jikan / MyAnimeList) y libros (Open Library + Google Books) por **nombre, género, año, estado y orden** (relevancia, calificación, popularidad, novedad, título).
 - 📜 **Orden de visualización / lectura**: reconstruye la cadena *precuela → secuela* con el conteo de episodios/capítulos/tomos de cada entrega, más historias paralelas y spin-offs.
 - 📖 **Lectura en línea dentro de la app**: libros con texto completo se abren embebidos (Internet Archive / Google Books); tráilers de anime embebidos.
+- ▶ **Dónde ver/leer**: top 7 de sitios por título (español primero). Para anime, con el microservicio opcional se abre el **enlace exacto** del episodio; para manga, el listado real de **capítulos por tomo** con enlace exacto vía la API oficial de **MangaDex** (español priorizado).
 - 👓 **Visor integrado**: PDF (pdf.js), EPUB (epub.js), CBZ/ZIP de manga (JSZip), imágenes y texto — desde una **URL** o desde **archivos de tu equipo**. Recuerda tu página/posición por documento.
 - ⭐ **Mi Biblioteca**: guarda favoritos con estado (pendiente / leyendo / completado). Persistente en tu navegador.
 - 🌗 **5 temas**: Oscuro, Claro, Medianoche, Sakura y Océano.

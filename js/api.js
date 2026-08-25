@@ -5,7 +5,7 @@
    - Open Library → libros (con lectura en línea vía Internet Archive)
    - Google Books → respaldo de libros
    ============================================================ */
-import { ANIME_SITES } from "./config.js";
+import { ANIME_SITES, MANGA_SITES, BACKEND_URL } from "./config.js";
 
 const JIKAN = "https://api.jikan.moe/v4";
 const ANILIST = "https://graphql.anilist.co";
@@ -417,9 +417,38 @@ export function animeWatchSites(title) {
   return ANIME_SITES.map((s) => ({
     site: s.name,
     language: s.lang,
+    provider: s.provider || null,
     url: s.url.replace("%s", q),
     tpl: s.url,
   }));
+}
+
+export function hasBackend() { return !!BACKEND_URL; }
+
+/* Resuelve el enlace EXACTO del anime en un proveedor vía microservicio.
+   Devuelve { animeUrl, episodeTemplate } o null si no hay backend / no
+   se encontró (el frontend usa entonces la búsqueda normal). */
+const resolveCache = {};
+export async function resolveExactLink(provider, title) {
+  if (!BACKEND_URL || !provider) return null;
+  const key = `${provider}:${title}`;
+  if (resolveCache[key] !== undefined) return resolveCache[key];
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const res = await fetch(
+      `${BACKEND_URL.replace(/\/$/, "")}/api/resolve?site=${encodeURIComponent(provider)}&q=${encodeURIComponent(title)}`,
+      { signal: ctrl.signal }
+    );
+    clearTimeout(timer);
+    const d = await res.json();
+    const out = d && d.found ? { animeUrl: d.animeUrl, episodeTemplate: d.episodeTemplate } : null;
+    resolveCache[key] = out;
+    return out;
+  } catch (_) {
+    resolveCache[key] = null;
+    return null;
+  }
 }
 
 // Búsqueda de un episodio concreto en un sitio: reemplaza %s por
@@ -475,18 +504,91 @@ export async function getEpisodes(item) {
   }
 }
 
-// Plataformas legales de lectura de manga con búsqueda directa del título.
+// Top de sitios para LEER manga (definidos en config.js, español primero).
 export function mangaReadingSites(title) {
   const q = encodeURIComponent(title);
-  return [
-    { site: "MANGA Plus · Shueisha", language: "ES/EN", url: `https://mangaplus.shueisha.co.jp/search_result?keyword=${q}` },
-    { site: "VIZ Manga", language: "EN", url: `https://www.viz.com/search?search=${q}` },
-    { site: "Comikey", language: "ES/EN", url: `https://comikey.com/search/?q=${q}` },
-    { site: "Google Play Libros", language: "ES", url: `https://play.google.com/store/search?q=${q}%20manga&c=books` },
-    { site: "BookWalker", language: "EN", url: `https://global.bookwalker.jp/search/?word=${q}` },
-    { site: "Kobo", language: "ES", url: `https://www.kobo.com/mx/es/search?query=${q}` },
-    { site: "Amazon Kindle", language: "ES", url: `https://www.amazon.com.mx/s?k=${q}+manga` },
-  ];
+  return MANGA_SITES.map((s) => ({
+    site: s.name,
+    language: s.lang,
+    provider: s.provider || null,
+    url: s.url.replace("%s", q),
+    tpl: s.url,
+  }));
+}
+
+/* ---------- MangaDex: capítulos reales por tomo con enlace exacto ----------
+   API oficial y gratuita (con CORS), prioriza español y luego inglés. */
+const MANGADEX = "https://api.mangadex.org";
+const mdChaptersCache = {};
+
+async function mdFetch(path) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = await fetch(`${MANGADEX}${path}`, { headers: { Accept: "application/json" }, signal: ctrl.signal });
+    if (!res.ok) throw new Error(`MangaDex ${res.status}`);
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+
+async function mdFindManga(title) {
+  const d = await mdFetch(
+    `/manga?title=${encodeURIComponent(title)}&limit=5&contentRating[]=safe&contentRating[]=suggestive&order[relevance]=desc`
+  );
+  return d.data?.[0]?.id || null;
+}
+
+// Devuelve capítulos agrupados y priorizados: para cada nº de capítulo se
+// prefiere español; si no hay, inglés. Incluye tomo cuando existe.
+export async function getMangaChapters(item) {
+  if (item.cat !== "manga") return null;
+  const key = item.id;
+  if (mdChaptersCache[key]) return mdChaptersCache[key];
+  try {
+    const mangaId = await mdFindManga(item.originalTitle || item.title);
+    if (!mangaId) { mdChaptersCache[key] = []; return []; }
+
+    const all = [];
+    let offset = 0;
+    for (let i = 0; i < 6; i++) { // hasta 3000 capítulos
+      const d = await mdFetch(
+        `/manga/${mangaId}/feed?translatedLanguage[]=es&translatedLanguage[]=es-la&translatedLanguage[]=en` +
+        `&order[volume]=asc&order[chapter]=asc&limit=500&offset=${offset}` +
+        `&contentRating[]=safe&contentRating[]=suggestive&includes[]=scanlation_group`
+      );
+      const batch = d.data || [];
+      all.push(...batch);
+      offset += 500;
+      if (offset >= (d.total || 0)) break;
+    }
+
+    // Elegir una edición por nº de capítulo: español primero
+    const byNum = new Map();
+    const langRank = (l) => (l === "es" || l === "es-la" ? 0 : l === "en" ? 1 : 2);
+    for (const c of all) {
+      const a = c.attributes || {};
+      const num = a.chapter || "?";
+      const cand = {
+        id: c.id,
+        chapter: num,
+        volume: a.volume || null,
+        lang: a.translatedLanguage || "",
+        title: a.title || "",
+        url: `https://mangadex.org/chapter/${c.id}`,
+      };
+      const cur = byNum.get(num);
+      if (!cur || langRank(cand.lang) < langRank(cur.lang)) byNum.set(num, cand);
+    }
+    const list = [...byNum.values()].sort(
+      (x, y) => (parseFloat(x.chapter) || 0) - (parseFloat(y.chapter) || 0)
+    );
+    mdChaptersCache[key] = list;
+    return list;
+  } catch (e) {
+    console.warn("MangaDex:", e.message);
+    mdChaptersCache[key] = [];
+    return [];
+  }
 }
 
 /* ---------- Orden de visualización / lectura (cadena precuela→secuela) ---------- */

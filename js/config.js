@@ -16,11 +16,34 @@ export const GOOGLE_CLIENT_ID = "458798326994-lt03dlrr87ee3i80pqmogb185fsl797h.a
    aquí su URL y listo (no toques el resto del código).
    ------------------------------------------------------------ */
 export const ANIME_SITES = [
+  { name: "AnimeFLV",   lang: "ES", provider: "animeflv", url: "https://www3.animeflv.net/browse?q=%s" },
+  { name: "TioAnime",   lang: "ES", provider: "tioanime", url: "https://tioanime.com/directorio?q=%s" },
+  { name: "JKAnime",    lang: "ES", provider: "jkanime",  url: "https://jkanime.net/buscar/%s/" },
   { name: "AnimeFénix", lang: "ES", url: "https://animefenix.tv/?s=%s" },
-  { name: "AnimeFLV",   lang: "ES", url: "https://www3.animeflv.net/browse?q=%s" },
-  { name: "JKAnime",    lang: "ES", url: "https://jkanime.net/buscar/%s/" },
-  { name: "TioAnime",   lang: "ES", url: "https://tioanime.com/directorio?q=%s" },
   { name: "AnimeOnegai", lang: "ES", url: "https://www.animeonegai.com/es/search?q=%s" },
   { name: "Crunchyroll", lang: "ES/EN", url: "https://www.crunchyroll.com/es/search?q=%s" },
   { name: "HiAnime",    lang: "EN", url: "https://hianime.to/search?keyword=%s" },
 ];
+
+/* ------------------------------------------------------------
+   Sitios "Dónde leerlo" para MANGA (top 7, editable, español primero).
+   MangaDex además entrega el listado real de capítulos por tomo con
+   enlace EXACTO (vía su API oficial); el resto abre la búsqueda.
+   ------------------------------------------------------------ */
+export const MANGA_SITES = [
+  { name: "MangaDex", lang: "ES/EN", provider: "mangadex", url: "https://mangadex.org/search?q=%s" },
+  { name: "MANGA Plus", lang: "ES/EN", url: "https://mangaplus.shueisha.co.jp/search_result?keyword=%s" },
+  { name: "Webtoon", lang: "ES", url: "https://www.webtoons.com/es/search?keyword=%s" },
+  { name: "Google Play Libros", lang: "ES", url: "https://play.google.com/store/search?q=%s%20manga&c=books" },
+  { name: "Kobo", lang: "ES", url: "https://www.kobo.com/mx/es/search?query=%s" },
+  { name: "VIZ Media", lang: "EN", url: "https://www.viz.com/search?search=%s" },
+  { name: "Comixology", lang: "EN", url: "https://www.comixology.com/search?search=%s" },
+];
+
+/* ------------------------------------------------------------
+   Microservicio que encuentra el ENLACE EXACTO del anime/episodio
+   (los proveedores marcados arriba con "provider"). Sin él, la app
+   abre la búsqueda del sitio como respaldo. Guía en anilector-api/README.
+   Ej: "https://anilector-api.vercel.app"  (sin barra final)
+   ------------------------------------------------------------ */
+export const BACKEND_URL = "";
