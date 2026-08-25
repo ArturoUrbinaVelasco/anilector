@@ -88,6 +88,16 @@ export const PIPED_APIS = [
   "https://pipedapi.adminforge.de",
   "https://api.piped.yt",
   "https://pipedapi.leptons.xyz",
+  "https://pipedapi.reallyaweso.me",
+  "https://pipedapi.ducks.party",
+];
+
+/* Respaldo de búsqueda: instancias Invidious (otro frontend abierto de
+   YouTube). Se usan si todas las de Piped fallan. */
+export const INVIDIOUS_APIS = [
+  "https://invidious.nerdvpn.de",
+  "https://inv.nadeko.net",
+  "https://yewtu.be",
 ];
 
 /* API oficial de YouTube (opcional, más estable que Piped).

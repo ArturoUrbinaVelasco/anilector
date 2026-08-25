@@ -26,7 +26,7 @@ const hasProxy = () => !!userProxy() || isLocal || !!BACKEND_URL;
 const proxied = (url) => `${proxyBase()}/api/hls?url=${encodeURIComponent(url)}`;
 
 const $ = (id) => document.getElementById(id);
-const state = { listIndex: 0, channels: [], group: "", query: "", hls: null, current: -1, view: [] };
+const state = { listIndex: 0, channels: [], group: "", query: "", hls: null, mpegts: null, current: -1, view: [] };
 const cache = {}; // url → channels[]
 const MAX_RENDER = 500;
 
@@ -173,8 +173,18 @@ function highlightCurrent() {
 /* ---------- reproductor ---------- */
 function stopPlayback() {
   if (state.hls) { try { state.hls.destroy(); } catch (_) {} state.hls = null; }
+  if (state.mpegts) { try { state.mpegts.destroy(); } catch (_) {} state.mpegts = null; }
   const v = $("tvVideo");
   if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+}
+
+// Detecta el motor de reproducción según la URL del canal
+function streamKind(url) {
+  const u = url.split("?")[0].toLowerCase();
+  if (/\.m3u8$/.test(u)) return "hls";
+  if (/\.(ts|mpegts|mts)$/.test(u) || /mpegts/.test(url)) return "mpegts";
+  if (/\.flv$/.test(u)) return "flv";
+  return "native"; // mp4, mkv servido, etc.
 }
 
 function playIndex(idx, useProxy = null) {
@@ -198,7 +208,7 @@ function playIndex(idx, useProxy = null) {
   stopPlayback();
   highlightCurrent();
 
-  const isHls = /\.m3u8(\?|$)/i.test(channel.url);
+  const kind = streamKind(channel.url);
   const src = useProxy && hasProxy() ? proxied(channel.url) : channel.url;
 
   const onFail = () => {
@@ -210,19 +220,31 @@ function playIndex(idx, useProxy = null) {
       ? ""
       : `<button class="btn btn-ghost btn-mini" id="tvRetryProxy">🛡️ ${t("tv.retryProxy")}</button>`;
     err.innerHTML = `${t("tv.playError")} ${retry}
+      <button class="btn btn-ghost btn-mini" id="tvErrVlc">🎬 VLC</button>
       <a class="btn btn-primary btn-mini" href="${esc(channel.url)}" target="_blank" rel="noopener">${t("tv.openTab")}</a>`;
-    const rb = $("tvRetryProxy");
-    if (rb) rb.addEventListener("click", () => playIndex(idx, true));
+    $("tvRetryProxy")?.addEventListener("click", () => playIndex(idx, true));
+    $("tvErrVlc")?.addEventListener("click", sendToVlc);
   };
 
   try {
-    if (isHls && window.Hls && window.Hls.isSupported()) {
+    if (kind === "hls" && window.Hls && window.Hls.isSupported()) {
       const hls = new window.Hls({ maxBufferLength: 20, manifestLoadingTimeOut: 12000 });
       state.hls = hls;
       hls.loadSource(src);
       hls.attachMedia(v);
       hls.on(window.Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
       hls.on(window.Hls.Events.ERROR, (_e, data) => { if (data?.fatal) { stopPlayback(); onFail(); } });
+    } else if ((kind === "mpegts" || kind === "flv") && window.mpegts && window.mpegts.isSupported()) {
+      // Canales MPEG-TS / FLV crudos (los que hls.js no reproduce)
+      const player = window.mpegts.createPlayer(
+        { type: kind === "flv" ? "flv" : "mpegts", url: src, isLive: true },
+        { liveBufferLatencyChasing: true }
+      );
+      state.mpegts = player;
+      player.attachMediaElement(v);
+      player.on(window.mpegts.Events.ERROR, () => { stopPlayback(); onFail(); });
+      player.load();
+      v.play().catch(() => {});
     } else {
       v.src = src; // Safari (HLS nativo) o streams directos (mp4, etc.)
       v.play().catch(() => {});

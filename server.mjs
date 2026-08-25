@@ -68,10 +68,12 @@ async function handleHls(req, res, target) {
   }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
+  let ref = "";
+  try { const u = new URL(target); ref = `${u.protocol}//${u.host}/`; } catch (_) {}
   try {
     const up = await fetch(target, {
       redirect: "follow", signal: ctrl.signal,
-      headers: { "User-Agent": UA, Accept: "*/*" },
+      headers: { "User-Agent": UA, Accept: "*/*", ...(ref ? { Referer: ref, Origin: ref.replace(/\/$/, "") } : {}) },
     });
     if (!up.ok) { res.writeHead(502); return res.end(`upstream ${up.status}`); }
     const ct = up.headers.get("content-type") || "";

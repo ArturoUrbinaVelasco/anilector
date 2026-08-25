@@ -4,7 +4,7 @@
    con el reproductor OFICIAL de YouTube (youtube-nocookie).
    ============================================================ */
 import { t } from "./i18n.js";
-import { PIPED_APIS, YOUTUBE_API_KEY } from "./config.js";
+import { PIPED_APIS, INVIDIOUS_APIS, YOUTUBE_API_KEY } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
 const state = { items: [], source: "piped" };
@@ -42,6 +42,27 @@ async function searchPiped(q) {
           duration: i.duration,
         }))
         .filter((i) => i.id);
+      if (items.length) return items;
+    } catch (e) { lastErr = e; }
+  }
+  // Respaldo: Invidious
+  for (const base of INVIDIOUS_APIS) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(`${base}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`${res.status}`);
+      const d = await res.json();
+      const items = (d || [])
+        .filter((i) => i.videoId)
+        .map((i) => ({
+          id: i.videoId,
+          title: i.title,
+          uploader: i.author || "",
+          thumb: (i.videoThumbnails || []).find((th) => th.quality === "medium")?.url || i.videoThumbnails?.[0]?.url || "",
+          duration: i.lengthSeconds,
+        }));
       if (items.length) return items;
     } catch (e) { lastErr = e; }
   }
