@@ -4,7 +4,7 @@
    con el reproductor OFICIAL de YouTube (youtube-nocookie).
    ============================================================ */
 import { t } from "./i18n.js";
-import { PIPED_APIS, INVIDIOUS_APIS, YOUTUBE_API_KEY, BACKEND_URL } from "./config.js";
+import { PIPED_APIS, INVIDIOUS_APIS, BACKEND_URL } from "./config.js";
 
 // GreenTuber: primero nuestro microservicio (server-side, sin CORS ni terceros
 // caídos); si no hay backend o falla, respaldo con Piped/Invidious.
@@ -23,7 +23,7 @@ async function searchGreentuber(q) {
 }
 
 const $ = (id) => document.getElementById(id);
-const state = { items: [], source: "piped" };
+const state = { items: [] };
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -85,20 +85,6 @@ async function searchPiped(q) {
   throw lastErr || new Error("sin resultados");
 }
 
-async function searchOfficial(q) {
-  const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=24&q=${encodeURIComponent(q)}&key=${YOUTUBE_API_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`YouTube ${res.status}`);
-  const d = await res.json();
-  return (d.items || []).map((i) => ({
-    id: i.id?.videoId,
-    title: i.snippet?.title,
-    uploader: i.snippet?.channelTitle || "",
-    thumb: i.snippet?.thumbnails?.medium?.url || i.snippet?.thumbnails?.default?.url || "",
-    duration: null,
-  })).filter((i) => i.id);
-}
-
 function fmtDur(s) {
   if (!s) return "";
   if (typeof s === "string") return s; // ya viene como "4:20"
@@ -141,15 +127,7 @@ async function doSearch(q) {
   if (vid) { play(vid, q); return; }
   grid.innerHTML = `<div class="loader"><div class="spinner"></div><span>${t("misc.loading")}</span></div>`;
   try {
-    if (state.source === "official") {
-      if (!YOUTUBE_API_KEY) {
-        grid.innerHTML = `<div class="empty-state"><div class="empty-icon">🔑</div><p>${t("yt.needKey")}</p></div>`;
-        return;
-      }
-      state.items = await searchOfficial(q);
-    } else {
-      state.items = await searchGreentuber(q);
-    }
+    state.items = await searchGreentuber(q);
     renderResults();
   } catch (e) {
     grid.innerHTML = `<div class="empty-state"><div class="empty-icon">📺</div>
@@ -158,18 +136,6 @@ async function doSearch(q) {
 }
 
 export function initYouTube() {
-  // selector de fuente: GreenTuber (Piped) / YouTube API oficial
-  $("ytSources").innerHTML = `
-    <button class="chip active" data-src="piped">🟢 GreenTuber</button>
-    <button class="chip" data-src="official">▶️ YouTube API</button>`;
-  $("ytSources").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-src]");
-    if (!b) return;
-    state.source = b.dataset.src;
-    document.querySelectorAll("#ytSources .chip").forEach((c) => c.classList.toggle("active", c === b));
-    const q = $("ytSearch").value.trim();
-    if (q) doSearch(q);
-  });
   $("ytForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const q = $("ytSearch").value.trim();

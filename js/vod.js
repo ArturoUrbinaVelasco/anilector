@@ -17,9 +17,9 @@ function esc(s) {
 
 /* prefix: 'vod' | 'retro' → usa los ids `${prefix}Grid`, `${prefix}Cats`… */
 function createCatalog(prefix, collections, unitKey, mediatypes) {
-  const state = { col: 0, query: "", page: 1, items: [], hasMore: false, loading: false, loaded: false };
+  const state = { col: 0, query: "", sort: "downloads desc", page: 1, items: [], hasMore: false, loading: false, loaded: false };
   const gid = `${prefix}Grid`, cid = `${prefix}Cats`, sid = `${prefix}Search`,
-        iid = `${prefix}Info`, mid = `${prefix}More`;
+        iid = `${prefix}Info`, mid = `${prefix}More`, sortId = `${prefix}Sort`;
 
   async function fetchPage({ append = false } = {}) {
     if (state.loading) return;
@@ -31,12 +31,19 @@ function createCatalog(prefix, collections, unitKey, mediatypes) {
     let q = `mediatype:(${mediatypes})`;
     if (col?.collection) q += ` AND collection:(${col.collection})`;
     if (col?.query) q += ` AND (${col.query})`;
-    if (state.query) q += ` AND (title:(${state.query.replace(/[()]/g, "")}))`;
+    if (state.query) {
+      // Coincidencia PARCIAL (no exige el nombre exacto): cada palabra con
+      // comodín, buscando en título y descripción.
+      const terms = state.query.replace(/[":()\[\]]/g, " ").split(/\s+/).filter(Boolean);
+      if (terms.length) {
+        q += " AND (" + terms.map((w) => `(title:${w}* OR ${w}*)`).join(" AND ") + ")";
+      }
+    }
 
     const params = new URLSearchParams();
     params.set("q", q);
     ["identifier", "title", "year", "downloads"].forEach((f) => params.append("fl[]", f));
-    params.append("sort[]", "downloads desc");
+    params.append("sort[]", state.sort);
     params.set("rows", "60");
     params.set("page", String(state.page));
     params.set("output", "json");
@@ -99,6 +106,7 @@ function createCatalog(prefix, collections, unitKey, mediatypes) {
       state.query = e.target.value.trim();
       deb = setTimeout(() => fetchPage(), 350);
     });
+    if ($(sortId)) $(sortId).addEventListener("change", (e) => { state.sort = e.target.value; fetchPage(); });
     $(gid).addEventListener("click", (e) => {
       const c = e.target.closest(".vod-card");
       if (c) play(c.dataset.id, c.dataset.title);

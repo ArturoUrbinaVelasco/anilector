@@ -127,8 +127,17 @@ export const VOD_COLLECTIONS = [
 /* Series retro / TV clásica (Internet Archive, dominio público). Editable. */
 export const RETRO_COLLECTIONS = [
   { name: "TV clásica", collection: "classic_tv" },
-  { name: "Caricaturas retro", collection: "animationandcartoons" },
-  { name: "Ciencia ficción TV", query: 'subject:(television) AND subject:("science fiction")' },
-  { name: "En español", query: 'subject:(television) AND language:(Spanish OR spanish)' },
   { name: "Todo TV retro", query: 'subject:(television)' },
+  { name: "En español", query: 'subject:(television) AND language:(Spanish OR spanish OR español)' },
+  { name: "Caricaturas retro", collection: "animationandcartoons" },
+  { name: "Ciencia ficción", query: 'subject:(television) AND subject:("science fiction")' },
+  { name: "Comedia", query: 'subject:(television) AND subject:(comedy)' },
+  { name: "Western", query: 'subject:(television) AND subject:(western)' },
+  { name: "Terror y misterio", query: 'subject:(television) AND (subject:(horror) OR subject:(mystery))' },
+  { name: "Aventura y acción", query: 'subject:(television) AND (subject:(adventure) OR subject:(action))' },
+  { name: "Drama", query: 'subject:(television) AND subject:(drama)' },
+  { name: "Infantil", query: 'subject:(television) AND (subject:(children) OR subject:(kids))' },
+  { name: "Superhéroes", query: 'subject:(television) AND subject:(superhero)' },
+  { name: "Noticieros y documental", query: 'subject:(television) AND (subject:(news) OR subject:(documentary))' },
+  { name: "Anuncios retro", query: 'subject:(commercials OR advertising)' },
 ];
