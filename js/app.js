@@ -13,6 +13,7 @@ import {
 import { initAuth } from "./auth.js";
 import { initTv, ensureTvLoaded, pauseTv } from "./tv.js";
 import { initYouTube } from "./youtube.js";
+import { initWebApps } from "./webapps.js";
 
 /* ---------- estado ---------- */
 const S = {
@@ -114,6 +115,7 @@ function showView(view) {
   S.view = view;
   $("viewTv").classList.toggle("hidden", view !== "tv");
   $("viewYt").classList.toggle("hidden", view !== "yt");
+  $("viewWeb").classList.toggle("hidden", view !== "web");
   $("viewSearch").classList.toggle("hidden", view !== "search");
   $("viewLibrary").classList.toggle("hidden", view !== "library");
   $("viewReader").classList.toggle("hidden", view !== "reader");
@@ -658,6 +660,7 @@ function init() {
   bindEvents();
   initTv();
   initYouTube();
+  initWebApps();
   // Página de inicio: TV en vivo
   showView("tv");
 }
