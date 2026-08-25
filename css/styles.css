@@ -481,11 +481,50 @@ body {
 }
 .btn-mini { padding: 0.25rem 0.8rem; font-size: 0.78rem; }
 .watch-links { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.watch-official-wrap { margin-bottom: 0.7rem; }
+.watch-official { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.watch-official-label { display: block; font-size: 0.76rem; font-weight: 800; color: #16a34a; margin-bottom: 0.35rem; }
+.btn-official {
+  background: color-mix(in srgb, #16a34a 16%, var(--bg-soft));
+  border: 1px solid color-mix(in srgb, #16a34a 55%, var(--border));
+  color: var(--text);
+}
+.btn-official:hover { border-color: #16a34a; background: color-mix(in srgb, #16a34a 26%, var(--bg-soft)); }
 .episodes-block { margin-top: 0.8rem; }
 .ep-hint { font-size: 0.8rem; color: var(--text-dim); margin: 0.5rem 0 0.6rem; }
 .ep-list { max-height: 360px; overflow-y: auto; padding-right: 0.3rem; }
 .ep-item .ep-go { color: var(--accent); font-weight: 800; }
 .ep-item:hover .ep-go { transform: scale(1.2); }
+.ep-item.ep-loading { opacity: 0.6; pointer-events: none; }
+.ep-item.ep-loading .ep-go { animation: spin 0.8s linear infinite; }
+/* botón "visto/leído" en cada episodio/capítulo */
+.ep-seen {
+  flex: 0 0 auto; width: 26px; height: 26px;
+  border-radius: 50%; border: 1.5px solid var(--border);
+  background: transparent; color: transparent;
+  font-weight: 900; font-size: 0.85rem; line-height: 1; cursor: pointer;
+  transition: all 0.15s;
+}
+.ep-seen:hover { border-color: var(--accent); color: var(--text-dim); }
+.ep-item.is-seen .ep-seen { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ep-item.is-seen .order-title { color: var(--text-dim); }
+.ep-item.is-seen .order-num { opacity: 0.55; }
+/* sección "Continuar" en Mi Biblioteca */
+.continue-section { margin: 0.4rem 0 1.2rem; }
+.continue-title { font-size: 1rem; font-weight: 800; margin: 0 0 0.6rem; }
+.continue-row { display: flex; gap: 0.7rem; overflow-x: auto; padding-bottom: 0.4rem; }
+.continue-card {
+  flex: 0 0 118px; width: 118px; text-align: left; cursor: pointer;
+  background: var(--bg-alt); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden; padding: 0; color: inherit;
+  display: flex; flex-direction: column; transition: transform 0.15s, border-color 0.15s;
+}
+.continue-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+.continue-cover { width: 100%; height: 160px; object-fit: cover; display: block; }
+.continue-cover.ph { display: flex; align-items: center; justify-content: center; font-size: 2.4rem; background: var(--bg); }
+.continue-name { font-size: 0.76rem; font-weight: 700; padding: 0.4rem 0.5rem 0.1rem; line-height: 1.2;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.continue-badge { font-size: 0.72rem; color: var(--accent); font-weight: 800; padding: 0 0.5rem 0.5rem; }
 .vol-group { margin-bottom: 0.8rem; }
 .vol-title { font-size: 0.82rem; font-weight: 800; color: var(--text-dim); margin: 0.5rem 0 0.4rem; text-transform: uppercase; letter-spacing: 0.5px; }
 .viewer-body img.page-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; }

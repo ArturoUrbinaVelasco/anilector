@@ -531,6 +531,17 @@ async function mdFetch(path) {
   } finally { clearTimeout(timer); }
 }
 
+// Páginas reales de un capítulo (para el lector integrado).
+// Usa el endpoint at-home; devuelve URLs de imagen en calidad normal.
+export async function getChapterPages(chapterId) {
+  const d = await mdFetch(`/at-home/server/${chapterId}`);
+  const base = d.baseUrl;
+  const hash = d.chapter?.hash;
+  const files = d.chapter?.data || [];
+  if (!base || !hash || !files.length) throw new Error("Capítulo sin páginas");
+  return files.map((f) => `${base}/data/${hash}/${f}`);
+}
+
 async function mdFindManga(title) {
   const d = await mdFetch(
     `/manga?title=${encodeURIComponent(title)}&limit=5&contentRating[]=safe&contentRating[]=suggestive&order[relevance]=desc`

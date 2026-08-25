@@ -5,10 +5,10 @@ import { t, setLang, getLang, applyTranslations } from "./i18n.js";
 import {
   search, getGenres, getDetail, buildOrder, onProviderChange,
   filterEsEn, mangaReadingSites, animeWatchSites, episodeSearchUrl, getEpisodes,
-  getMangaChapters, resolveExactLink, hasBackend,
+  getMangaChapters, getChapterPages, resolveExactLink, hasBackend,
 } from "./api.js";
 import {
-  openLocalFiles, openUrl, openIframe, openGoogleBook, closeViewer, bindViewerControls,
+  openLocalFiles, openUrl, openIframe, openImages, openGoogleBook, closeViewer, bindViewerControls,
 } from "./viewer.js";
 import { initAuth } from "./auth.js";
 import { initTv, ensureTvLoaded, pauseTv } from "./tv.js";
@@ -65,6 +65,75 @@ function toggleLib(item) {
   }
   saveLib(list);
   if (S.view === "library") renderLibrary();
+}
+
+/* ---------- vistos / leídos + "Continuar" (localStorage + Drive) ---------- */
+function seenStore() {
+  try { return JSON.parse(localStorage.getItem("anilector.seen") || "{}"); }
+  catch { return {}; }
+}
+function saveSeen(store) {
+  localStorage.setItem("anilector.seen", JSON.stringify(store));
+  window.dispatchEvent(new Event("anilector:datachanged"));
+}
+// kind: "ep" (episodio) | "ch" (capítulo)
+function markSeen(item, kind, n, on = true) {
+  const store = seenStore();
+  const e = store[item.id] || {};
+  e.title = item.title; e.cover = item.cover; e.cat = item.cat;
+  // Snapshot mínimo para poder reabrir el detalle en otra sesión.
+  e.base = {
+    id: item.id, sourceId: item.sourceId, cat: item.cat, src: item.src || null,
+    title: item.title, cover: item.cover, year: item.year,
+    type: item.type, counts: item.counts, url: item.url, ia: item.ia || null,
+  };
+  const bag = kind === "ch" ? (e.chs = e.chs || {}) : (e.eps = e.eps || {});
+  if (on) { bag[n] = 1; e.last = n; e.lastKind = kind; e.ts = Date.now(); }
+  else { delete bag[n]; }
+  // Si ya no queda nada marcado, quitar la entrada.
+  if (!Object.keys(e.eps || {}).length && !Object.keys(e.chs || {}).length) delete store[item.id];
+  else store[item.id] = e;
+  saveSeen(store);
+}
+function isSeen(id, kind, n) {
+  const e = seenStore()[id];
+  if (!e) return false;
+  return !!(kind === "ch" ? e.chs?.[n] : e.eps?.[n]);
+}
+function continueList() {
+  const store = seenStore();
+  return Object.entries(store)
+    .filter(([, e]) => e.last != null)
+    .map(([id, e]) => ({ id, ...e }))
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+    .slice(0, 12);
+}
+function renderContinue() {
+  const items = continueList();
+  const sec = $("continueSection");
+  const row = $("continueRow");
+  if (!sec || !row) return;
+  sec.classList.toggle("hidden", items.length === 0);
+  const kindLbl = (e) => e.lastKind === "ch"
+    ? `${t("detail.chapter")} ${e.last}` : `Ep. ${e.last}`;
+  row.innerHTML = items.map((e) => `
+    <button class="continue-card" data-id="${esc(e.id)}" title="${esc(e.title)}">
+      ${e.cover
+        ? `<img class="continue-cover" loading="lazy" src="${esc(e.cover)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'continue-cover ph',textContent:'📖'}))" />`
+        : `<div class="continue-cover ph">${e.cat === "anime" ? "🎬" : e.cat === "manga" ? "📖" : "📕"}</div>`}
+      <span class="continue-name">${esc(e.title)}</span>
+      <span class="continue-badge">▶ ${esc(kindLbl(e))}</span>
+    </button>`).join("");
+  row.querySelectorAll(".continue-card").forEach((b) =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.id;
+      // Si el ítem no está en resultados ni biblioteca, inyectar su snapshot.
+      if (!S.items.find((x) => x.id === id) && !lib().find((x) => x.id === id)) {
+        const snap = seenStore()[id]?.base;
+        if (snap) S.items.push(snap);
+      }
+      openDetail(id);
+    }));
 }
 
 /* ---------- textos de conteo ---------- */
@@ -261,15 +330,30 @@ async function openDetail(id) {
     ${(() => {
       if (d.cat === "book") return "";
       const shortLang = (l) => l ? ` · ${String(l).replace(/english/i, "EN").replace(/spanish.*/i, "ES")}` : "";
-      // Top 7 de sitios (config) + oficiales ES/EN que reporte la API
-      let sites = d.cat === "anime" ? animeWatchSites(d.title) : mangaReadingSites(d.title);
-      const seen = new Set(sites.map((s) => s.site.toLowerCase()));
-      for (const s of filterEsEn(d.streaming)) {
-        if (!seen.has(s.site.toLowerCase())) { sites.push(s); seen.add(s.site.toLowerCase()); }
+      // Proveedores OFICIALES con licencia (Crunchyroll, Netflix, HIDIVE, Bilibili…)
+      // que reportan Jikan/AniList: enlace EXACTO y legal a la ficha del título.
+      // Antes quedaban ocultos tras los sitios de config; ahora van primero.
+      const official = [];
+      if (d.cat === "anime") {
+        const seenOff = new Set();
+        for (const s of filterEsEn(d.streaming || [])) {
+          const k = s.site.toLowerCase();
+          if (!seenOff.has(k)) { official.push(s); seenOff.add(k); }
+        }
       }
+      // Sitios de config (búsqueda; algunos con resolución exacta vía microservicio).
+      let sites = d.cat === "anime" ? animeWatchSites(d.title) : mangaReadingSites(d.title);
       sites = sites.slice(0, 7);
-      if (!sites.length) return "";
+      if (!official.length && !sites.length) return "";
       const icon = d.cat === "anime" ? "▶" : "📖";
+      const officialUI = official.length ? `
+        <div class="watch-official-wrap">
+          <span class="watch-official-label">✅ ${t("detail.official")}</span>
+          <div class="watch-official">
+            ${official.map((s) =>
+              `<button class="btn btn-official" data-officialurl="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">▶ ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
+          </div>
+        </div>` : "";
       const listUI = d.cat === "anime"
         ? ((d.counts?.episodes || d.src !== "al") ? `
           <div class="episodes-block">
@@ -284,10 +368,11 @@ async function openDetail(id) {
       return `
       <div class="detail-section">
         <h3>${d.cat === "anime" ? t("detail.whereWatch") : t("detail.whereRead")}</h3>
-        <div class="watch-links" id="watchLinks">
+        ${officialUI}
+        ${sites.length ? `<div class="watch-links" id="watchLinks">
           ${sites.map((s, i) =>
-            `<button class="btn ${i === 0 ? "btn-primary" : "btn-ghost"} watch-site" data-site="${i}" data-url="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">${icon} ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
-        </div>
+            `<button class="btn ${i === 0 && !official.length ? "btn-primary" : "btn-ghost"} watch-site" data-site="${i}" data-url="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">${icon} ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
+        </div>` : ""}
         ${listUI}
       </div>`;
     })()}
@@ -311,6 +396,9 @@ async function openDetail(id) {
       openIframe(`https://archive.org/embed/${b.dataset.readia}`, b.dataset.title)));
   box.querySelectorAll("[data-readurl]").forEach((b) =>
     b.addEventListener("click", () => openIframe(b.dataset.readurl, b.dataset.title)));
+  // Proveedores oficiales: abrir la ficha licenciada dentro del visor.
+  box.querySelectorAll("[data-officialurl]").forEach((b) =>
+    b.addEventListener("click", () => openIframe(b.dataset.officialurl, b.dataset.title)));
 
   // --- Sitios "dónde ver/leer" + listado de episodios/capítulos ---
   const watchSites = d.cat === "anime"
@@ -373,7 +461,8 @@ async function openDetail(id) {
             <div class="vol-title">📦 ${esc(vol)}</div>
             <ol class="order-list ep-list">
               ${chs.map((c) => `
-                <li class="order-item ep-item" data-url="${esc(c.url)}" data-n="${esc(c.chapter)}">
+                <li class="order-item ep-item ${isSeen(d.id, "ch", c.chapter) ? "is-seen" : ""}" data-url="${esc(c.url)}" data-cid="${esc(c.id)}" data-n="${esc(c.chapter)}">
+                  <button class="ep-seen" data-seen title="${esc(t("detail.markSeen"))}">✓</button>
                   <span class="order-num">${esc(c.chapter)}</span>
                   <div class="order-info">
                     <div class="order-title">${flag(c.lang)} ${esc(c.title || `${t("detail.chapter")} ${c.chapter}`)}</div>
@@ -383,15 +472,40 @@ async function openDetail(id) {
             </ol>
           </div>`).join("")}`;
       boxC.dataset.loaded = "1";
+      boxC.querySelectorAll(".ep-seen").forEach((btn) =>
+        btn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const li = btn.closest(".ep-item");
+          const on = !li.classList.contains("is-seen");
+          li.classList.toggle("is-seen", on);
+          markSeen(d, "ch", li.dataset.n, on);
+        }));
       boxC.querySelectorAll(".ep-item").forEach((li) =>
-        li.addEventListener("click", () => {
+        li.addEventListener("click", async () => {
           const site = watchSites[activeSite] || watchSites[0];
-          // MangaDex → enlace exacto del capítulo; otro sitio → su búsqueda
-          if (site?.provider === "mangadex" || !site) {
-            openIframe(li.dataset.url, `${d.title} — ${t("detail.chapter")} ${li.dataset.n}`);
-          } else {
+          const label = `${d.title} — ${t("detail.chapter")} ${li.dataset.n}`;
+          li.classList.add("is-seen");
+          markSeen(d, "ch", li.dataset.n); // marcar leído al abrir
+          // MangaDex → lector integrado (páginas reales vía at-home API)
+          if ((site?.provider === "mangadex" || !site) && li.dataset.cid) {
+            if (li.dataset.busy) return;
+            li.dataset.busy = "1";
+            li.classList.add("ep-loading");
+            try {
+              const urls = await getChapterPages(li.dataset.cid);
+              openImages(urls.map((u, i) => ({ name: `${i + 1}`, url: u })), label);
+            } catch (err) {
+              console.warn("Lector integrado:", err.message);
+              openIframe(li.dataset.url, label); // respaldo: mangadex.org
+            } finally {
+              li.classList.remove("ep-loading");
+              delete li.dataset.busy;
+            }
+          } else if (site) {
             openIframe(episodeSearchUrl(site, d.title, li.dataset.n),
-              `${d.title} — ${t("detail.chapter")} ${li.dataset.n} · ${site.site}`);
+              `${label} · ${site.site}`);
+          } else {
+            openIframe(li.dataset.url, label);
           }
         }));
     });
@@ -419,7 +533,8 @@ async function openDetail(id) {
         <p class="ep-hint">${t("detail.episodesHint")}</p>
         <ol class="order-list ep-list">
           ${eps.map((e) => `
-            <li class="order-item ep-item" data-n="${e.number}">
+            <li class="order-item ep-item ${isSeen(d.id, "ep", e.number) ? "is-seen" : ""}" data-n="${e.number}">
+              <button class="ep-seen" data-seen title="${esc(t("detail.markSeen"))}">✓</button>
               <span class="order-num">${e.number}</span>
               <div class="order-info">
                 <div class="order-title">${esc(e.title)}</div>
@@ -428,11 +543,21 @@ async function openDetail(id) {
             </li>`).join("")}
         </ol>`;
       boxE.dataset.loaded = "1";
+      boxE.querySelectorAll(".ep-seen").forEach((btn) =>
+        btn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const li = btn.closest(".ep-item");
+          const on = !li.classList.contains("is-seen");
+          li.classList.toggle("is-seen", on);
+          markSeen(d, "ep", li.dataset.n, on);
+        }));
       boxE.querySelectorAll(".ep-item").forEach((li) =>
         li.addEventListener("click", async () => {
           const n = li.dataset.n;
           const site = sitesForEp[activeSite] || sitesForEp[0];
           const title = `${d.title} — Ep. ${n} · ${site.site}`;
+          li.classList.add("is-seen");
+          markSeen(d, "ep", n); // marcar visto al abrir
           // Con backend + proveedor: enlace EXACTO del episodio.
           if (site.provider && hasBackend()) {
             if (resolved[site.provider] === undefined) {
@@ -502,9 +627,11 @@ function closeDetail() {
 
 /* ---------- biblioteca ---------- */
 function renderLibrary() {
+  renderContinue();
   const list = lib().filter((x) => S.libFilter === "all" || x.status === S.libFilter);
   $("libraryGrid").innerHTML = list.map((i) => cardHTML(i, { library: true })).join("");
-  $("libraryEmpty").classList.toggle("hidden", list.length > 0);
+  // Ocultar el estado vacío si hay tarjetas guardadas o algo en "Continuar".
+  $("libraryEmpty").classList.toggle("hidden", list.length > 0 || continueList().length > 0);
 }
 
 /* ---------- archivos recientes del visor ---------- */

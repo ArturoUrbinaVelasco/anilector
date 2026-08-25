@@ -13,7 +13,7 @@ import { GOOGLE_CLIENT_ID } from "./config.js";
 const SCOPES =
   "openid email profile https://www.googleapis.com/auth/drive.appdata";
 const FILE_NAME = "anilector-datos.json";
-const KEYS = ["anilector.library", "anilector.progress", "anilector.recent"];
+const KEYS = ["anilector.library", "anilector.progress", "anilector.recent", "anilector.seen"];
 
 let tokenClient = null;
 let accessToken = null;
@@ -130,6 +130,7 @@ function collectLocal() {
     library: readKey(KEYS[0]) || [],
     progress: readKey(KEYS[1]) || {},
     recent: readKey(KEYS[2]) || [],
+    seen: readKey(KEYS[3]) || {},
     updatedAt: Date.now(),
   };
 }
@@ -138,7 +139,28 @@ function applyMerged(m) {
     localStorage.setItem(KEYS[0], JSON.stringify(m.library || []));
     localStorage.setItem(KEYS[1], JSON.stringify(m.progress || {}));
     localStorage.setItem(KEYS[2], JSON.stringify(m.recent || []));
+    localStorage.setItem(KEYS[3], JSON.stringify(m.seen || {}));
   } catch (_) {}
+}
+// Fusiona vistos/leídos por título, uniendo episodios y capítulos de ambos lados.
+function mergeSeen(remote, local) {
+  const out = {};
+  for (const id of new Set([...Object.keys(remote), ...Object.keys(local)])) {
+    const r = remote[id] || {}, l = local[id] || {};
+    const eps = { ...(r.eps || {}), ...(l.eps || {}) };
+    const chs = { ...(r.chs || {}), ...(l.chs || {}) };
+    const newer = (l.ts || 0) >= (r.ts || 0) ? l : r; // el más reciente define "último"
+    out[id] = {
+      title: newer.title || r.title || l.title,
+      cover: newer.cover || r.cover || l.cover,
+      cat: newer.cat || r.cat || l.cat,
+      base: newer.base || r.base || l.base,
+      eps, chs,
+      last: newer.last, lastKind: newer.lastKind,
+      ts: Math.max(l.ts || 0, r.ts || 0),
+    };
+  }
+  return out;
 }
 function merge(remote, local) {
   if (!remote) return local;
@@ -149,6 +171,7 @@ function merge(remote, local) {
     library: [...byId.values()],
     progress: { ...(remote.progress || {}), ...(local.progress || {}) },
     recent: [...new Set([...(local.recent || []), ...(remote.recent || [])])].slice(0, 5),
+    seen: mergeSeen(remote.seen || {}, local.seen || {}),
     updatedAt: Date.now(),
   };
 }
