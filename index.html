@@ -80,6 +80,7 @@
   <nav class="main-nav" role="tablist">
     <button class="nav-tab active" data-view="tv">📺 <span data-i18n="nav.tv">TV en vivo</span></button>
     <button class="nav-tab" data-view="vod">🎬 <span data-i18n="nav.vod">Películas</span></button>
+    <button class="nav-tab" data-view="web">🌐 <span data-i18n="nav.web">Sitios</span></button>
     <button class="nav-tab" data-view="search" data-cat="anime">🎞️ <span data-i18n="nav.anime">Anime</span></button>
     <button class="nav-tab" data-view="search" data-cat="manga">📖 <span data-i18n="nav.manga">Manga</span></button>
     <button class="nav-tab" data-view="search" data-cat="books">📚 <span data-i18n="nav.books">Libros</span></button>
@@ -126,6 +127,28 @@
         <span id="tvInfo" class="results-info"></span>
         <div id="tvGrid" class="tv-channel-list"></div>
       </aside>
+    </div>
+  </main>
+
+  <!-- ======= VISTA: SITIOS (navegador integrado) ======= -->
+  <main id="viewWeb" class="view hidden">
+    <h2 class="view-title" data-i18n="web.title">🌐 Sitios</h2>
+    <p class="tv-note" data-i18n="web.note">Abre un sitio dentro de AniLector. Algunos sitios no permiten mostrarse embebidos; en ese caso usa el botón para abrirlo en pestaña nueva.</p>
+    <form id="webForm" class="url-form">
+      <input id="webUrl" type="text" data-i18n-placeholder="web.ph" placeholder="https://… o pega la URL de greentube" />
+      <button class="btn btn-primary" type="submit" data-i18n="web.open">Abrir</button>
+    </form>
+    <div id="webShortcuts" class="tv-lists"></div>
+    <div id="webFrameWrap" class="web-frame-wrap hidden">
+      <div class="tv-player-bar">
+        <span id="webTitle" class="tv-now">—</span>
+        <div class="tv-player-actions">
+          <a id="webExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
+          <button id="webClose" class="btn btn-ghost btn-mini" title="Cerrar">✕</button>
+        </div>
+      </div>
+      <iframe id="webFrame" referrerpolicy="no-referrer" allow="fullscreen; autoplay"></iframe>
+      <div id="webHint" class="tv-error"></div>
     </div>
   </main>
 

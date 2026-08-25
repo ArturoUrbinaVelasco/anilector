@@ -66,6 +66,17 @@ export const M3U_LISTS = [
    Catálogo 100% legal y gratuito. Categorías editables (son
    "colecciones" reales de archive.org).
    ------------------------------------------------------------ */
+/* ------------------------------------------------------------
+   Apartado "Sitios" — accesos rápidos que se abren EMBEBIDOS
+   dentro de AniLector (en vez de una pestaña nueva). Editable.
+   Nota: algunos sitios se bloquean a sí mismos para no mostrarse
+   dentro de otras páginas; en ese caso no hay forma de forzarlo.
+   Ej: { name: "Greentube", url: "https://…" }
+   ------------------------------------------------------------ */
+export const WEB_APPS = [
+  // { name: "Greentube", url: "https://tu-sitio.example" },
+];
+
 export const VOD_COLLECTIONS = [
   { name: "Destacadas", collection: "feature_films" },
   { name: "Cine en español", query: 'language:(Spanish OR spanish OR español OR castellano)' },
