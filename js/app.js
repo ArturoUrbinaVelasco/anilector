@@ -14,6 +14,7 @@ import { initAuth } from "./auth.js";
 import { initTv, ensureTvLoaded, pauseTv } from "./tv.js";
 import { initVod, ensureVodLoaded } from "./vod.js";
 import { initWebApps } from "./webapps.js";
+import { initYouTube } from "./youtube.js";
 
 /* ---------- estado ---------- */
 const S = {
@@ -115,6 +116,7 @@ function showView(view) {
   S.view = view;
   $("viewTv").classList.toggle("hidden", view !== "tv");
   $("viewVod").classList.toggle("hidden", view !== "vod");
+  $("viewYt").classList.toggle("hidden", view !== "yt");
   $("viewWeb").classList.toggle("hidden", view !== "web");
   $("viewSearch").classList.toggle("hidden", view !== "search");
   $("viewLibrary").classList.toggle("hidden", view !== "library");
@@ -662,6 +664,7 @@ function init() {
   initTv();
   initVod();
   initWebApps();
+  initYouTube();
   // Página de inicio: TV en vivo
   showView("tv");
 }

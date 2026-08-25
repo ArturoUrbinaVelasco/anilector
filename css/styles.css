@@ -579,6 +579,23 @@ body {
 .tv-name { font-size: 0.85rem; font-weight: 700; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tv-group { font-size: 0.7rem; color: var(--text-dim); }
 
+.chip-add { border-style: dashed; }
+.tv-add-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.tv-add-col h4 { font-size: 0.9rem; margin-bottom: 0.5rem; }
+.tv-add-col .url-form { flex-direction: column; align-items: stretch; }
+.tv-add-col .url-form input { min-width: 0; }
+.tv-custom-list { display: flex; flex-direction: column; gap: 0.3rem; }
+.tv-custom-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; background: var(--bg-soft); border-radius: 8px; padding: 0.3rem 0.6rem; }
+
 @media (max-width: 860px) {
   .tv-layout { grid-template-columns: 1fr; }
   .tv-stage { position: sticky; top: 60px; z-index: 5; }
@@ -595,6 +612,12 @@ body {
   box-shadow: var(--shadow);
 }
 #webFrame { width: 100%; height: 70vh; border: none; background: #fff; display: block; }
+#ytFrame { width: 100%; height: 100%; border: none; background: #000; display: block; }
+.yt-thumb-wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: var(--bg-soft); border-radius: 10px 10px 0 0; overflow: hidden; }
+.yt-thumb { width: 100%; height: 100%; object-fit: cover; }
+.yt-thumb-ph { display: flex; align-items: center; justify-content: center; font-size: 2rem; color: var(--text-dim); width: 100%; height: 100%; }
+.yt-dur { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.8); color: #fff; font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 5px; }
+.yt-card .card-cover { display: none; }
 
 /* ---------- Sesión con Google ---------- */
 .auth-area { position: relative; display: flex; align-items: center; }

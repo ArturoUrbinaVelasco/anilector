@@ -21,12 +21,25 @@ Aplicación web **responsiva, multilenguaje (ES/EN) y con temas** para buscar **
 
 ## 🚀 Uso local
 
-No hay build. Solo sirve la carpeta:
+No hay build. Dos opciones:
+
+**Opción A — servidor local con proxy de TV (recomendado para ver más canales):**
+
+```bash
+node server.mjs
+```
+
+Abre `http://localhost:8787`. Este servidor sirve la app **y** hace de proxy de TV **desde tu propia conexión**, así se reproducen dentro de la app los canales `http`/IP o con bloqueo por región que en la versión web solo se abren en pestaña nueva. Requiere Node 18+.
+
+### 📱 Ver la TV en el móvil u otro equipo
+
+- **Misma WiFi (lo más fácil):** con `node server.mjs` corriendo en la PC, abre en el móvil la dirección `http://IP-DE-TU-PC:8787` que imprime la consola (ej. `http://192.168.1.50:8787`). Todo va por HTTP desde tu red, sin problemas de contenido mixto.
+- **Desde cualquier lado (datos móviles):** expón tu servidor local con un túnel gratuito y open-source como **Cloudflare Tunnel** (`cloudflared tunnel --url http://localhost:8787`). Te da una URL `https://…`. Ábrela en el móvil, **o** en la app web pega esa URL en **TV → ➕ Añadir → Proxy de TV** para que la versión online reproduzca tus canales desde tu IP de casa.
+
+**Opción B — solo estáticos (sin proxy):**
 
 ```bash
 python3 -m http.server 8080
-# o
-npx serve .
 ```
 
 Abre `http://localhost:8080`.

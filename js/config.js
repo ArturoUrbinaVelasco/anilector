@@ -74,8 +74,26 @@ export const M3U_LISTS = [
    Ej: { name: "Greentube", url: "https://…" }
    ------------------------------------------------------------ */
 export const WEB_APPS = [
-  // { name: "Greentube", url: "https://tu-sitio.example" },
+  // { name: "Mi sitio", url: "https://tu-sitio.example" },
 ];
+
+/* ------------------------------------------------------------
+   YouTube (estilo GreenTuber): búsqueda vía instancias Piped
+   (frontend abierto de YouTube, con CORS). Reproducción con el
+   iframe OFICIAL de YouTube. Si una instancia falla, se prueba la
+   siguiente. Puedes reordenar/añadir instancias aquí.
+   ------------------------------------------------------------ */
+export const PIPED_APIS = [
+  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.adminforge.de",
+  "https://api.piped.yt",
+  "https://pipedapi.leptons.xyz",
+];
+
+/* API oficial de YouTube (opcional, más estable que Piped).
+   Consíguela gratis en Google Cloud → "YouTube Data API v3" → crea una
+   clave de API y pégala aquí. Si se deja vacía, solo se usa GreenTuber (Piped). */
+export const YOUTUBE_API_KEY = "";
 
 export const VOD_COLLECTIONS = [
   { name: "Destacadas", collection: "feature_films" },

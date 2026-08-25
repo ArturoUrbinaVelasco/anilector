@@ -5,12 +5,46 @@
 import { t } from "./i18n.js";
 import { M3U_LISTS, BACKEND_URL } from "./config.js";
 
-const proxied = (url) => `${BACKEND_URL.replace(/\/$/, "")}/api/hls?url=${encodeURIComponent(url)}`;
+// Base del proxy (en orden de prioridad):
+//  1) Proxy personalizado que el usuario configura (localStorage) — sirve
+//     para usar tu servidor de casa desde el móvil u otro equipo.
+//  2) En local (localhost/IP de tu red) el propio servidor lo sirve en el mismo origen.
+//  3) En la web pública, el microservicio (BACKEND_URL).
+const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname) ||
+  /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
+function userProxy() {
+  try { return (localStorage.getItem("anilector.proxyurl") || "").trim().replace(/\/$/, ""); }
+  catch { return ""; }
+}
+function proxyBase() {
+  const up = userProxy();
+  if (up) return up;
+  if (isLocal) return "";
+  return (BACKEND_URL || "").replace(/\/$/, "");
+}
+const hasProxy = () => !!userProxy() || isLocal || !!BACKEND_URL;
+const proxied = (url) => `${proxyBase()}/api/hls?url=${encodeURIComponent(url)}`;
 
 const $ = (id) => document.getElementById(id);
 const state = { listIndex: 0, channels: [], group: "", query: "", hls: null, current: -1, view: [] };
 const cache = {}; // url → channels[]
 const MAX_RENDER = 500;
+
+/* ---------- fuentes personalizadas (IPTV manual, persistente) ---------- */
+function loadCustom() {
+  try { return JSON.parse(localStorage.getItem("anilector.tvcustom") || '{"lists":[],"channels":[]}'); }
+  catch { return { lists: [], channels: [] }; }
+}
+function saveCustom(c) { localStorage.setItem("anilector.tvcustom", JSON.stringify(c)); }
+let custom = loadCustom();
+
+// Fuentes = listas fijas + listas del usuario + (virtual) "Mis canales"
+function sources() {
+  const s = M3U_LISTS.map((l) => ({ ...l }));
+  custom.lists.forEach((l) => s.push({ name: l.name, flag: "➕", url: l.url, custom: true }));
+  if (custom.channels.length) s.push({ name: t("tv.myChannels"), flag: "⭐", virtual: true });
+  return s;
+}
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -46,15 +80,33 @@ async function loadList(i) {
   state.listIndex = i;
   state.group = "";
   state.query = "";
-  const list = M3U_LISTS[i];
+  if ($("tvSearch")) $("tvSearch").value = "";
+  const list = sources()[i];
   const grid = $("tvGrid");
+  if (!list) return;
+
+  // Lista virtual "Mis canales"
+  if (list.virtual) {
+    state.channels = custom.channels.map((c) => ({ name: c.name, url: c.url, logo: "", group: "" }));
+    renderGroups(); renderChannels(); return;
+  }
+
   grid.innerHTML = `<div class="loader"><div class="spinner"></div><span>${t("misc.loading")}</span></div>`;
   $("tvInfo").textContent = "";
   if (cache[list.url]) { state.channels = cache[list.url]; renderGroups(); renderChannels(); return; }
-  try {
-    const res = await fetch(list.url);
+  async function fetchM3U(u) {
+    const res = await fetch(u);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
+    return res.text();
+  }
+  try {
+    let text;
+    try {
+      text = await fetchM3U(list.url); // intento directo
+    } catch (e1) {
+      if (!hasProxy()) throw e1;
+      text = await fetchM3U(proxied(list.url)); // respaldo por proxy (CORS)
+    }
     const channels = parseM3U(text).filter((c) => c.url);
     cache[list.url] = channels;
     state.channels = channels;
@@ -125,10 +177,16 @@ function stopPlayback() {
   if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
 }
 
-function playIndex(idx, useProxy = false) {
+function playIndex(idx, useProxy = null) {
   const channel = state.channels[idx];
   if (!channel) return;
   state.current = idx;
+  // Contenido mixto seguro (canal http:// en una web https://): usar proxy
+  // directamente, sin perder tiempo en un intento directo que el navegador bloquea.
+  if (useProxy === null) {
+    const mixed = location.protocol === "https:" && /^http:\/\//i.test(channel.url);
+    useProxy = mixed && hasProxy();
+  }
   const v = $("tvVideo");
   const err = $("tvError");
   const ph = $("tvPlaceholder");
@@ -141,14 +199,14 @@ function playIndex(idx, useProxy = false) {
   highlightCurrent();
 
   const isHls = /\.m3u8(\?|$)/i.test(channel.url);
-  const src = useProxy && BACKEND_URL ? proxied(channel.url) : channel.url;
+  const src = useProxy && hasProxy() ? proxied(channel.url) : channel.url;
 
   const onFail = () => {
     // 1º intento falla y hay proxy → reintentar por el proxy automáticamente
-    if (!useProxy && BACKEND_URL) return playIndex(idx, true);
+    if (!useProxy && hasProxy()) return playIndex(idx, true);
     // Sin proxy o ya falló también: mostrar opciones
     err.classList.remove("hidden");
-    const retry = !BACKEND_URL
+    const retry = !hasProxy()
       ? ""
       : `<button class="btn btn-ghost btn-mini" id="tvRetryProxy">🛡️ ${t("tv.retryProxy")}</button>`;
     err.innerHTML = `${t("tv.playError")} ${retry}
@@ -173,6 +231,20 @@ function playIndex(idx, useProxy = false) {
   } catch (_) { onFail(); }
 }
 
+// Enviar el canal actual a VLC (descarga una lista .m3u que VLC abre)
+function sendToVlc() {
+  const ch = state.channels[state.current];
+  if (!ch) return;
+  const m3u = `#EXTM3U\n#EXTINF:-1,${ch.name}\n${ch.url}\n`;
+  const blob = new Blob([m3u], { type: "audio/x-mpegurl" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${ch.name.replace(/[^\w.-]+/g, "_")}.m3u`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
 // Zapping: avanza/retrocede dentro de la lista visible
 function zap(dir) {
   if (!state.view.length) return;
@@ -187,16 +259,57 @@ function zap(dir) {
   row?.scrollIntoView({ block: "nearest" });
 }
 
+function renderSources() {
+  const arr = sources();
+  $("tvLists").innerHTML =
+    arr.map((l, i) =>
+      `<button class="chip ${i === state.listIndex ? "active" : ""}" data-list="${i}">${l.flag} ${esc(l.name)}</button>`).join("") +
+    `<button class="chip chip-add" id="tvAddBtn">➕ ${t("tv.add")}</button>`;
+}
+
 /* ---------- interfaz ---------- */
 export function initTv() {
-  // selector de listas
-  $("tvLists").innerHTML = M3U_LISTS.map((l, i) =>
-    `<button class="chip ${i === 0 ? "active" : ""}" data-list="${i}">${l.flag} ${esc(l.name)}</button>`).join("");
+  renderSources();
   $("tvLists").addEventListener("click", (e) => {
+    if (e.target.closest("#tvAddBtn")) { $("tvAddPanel").classList.toggle("hidden"); return; }
     const b = e.target.closest("[data-list]");
     if (!b) return;
+    state.listIndex = Number(b.dataset.list);
     document.querySelectorAll("#tvLists .chip").forEach((c) => c.classList.toggle("active", c === b));
-    loadList(Number(b.dataset.list));
+    loadList(state.listIndex);
+  });
+
+  // Añadir IPTV manual (lista M3U o canal directo)
+  renderCustomList();
+  $("tvAddList").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("tvAddName").value.trim() || "Mi lista";
+    const url = $("tvAddUrl").value.trim();
+    if (!url) return;
+    custom.lists.push({ name, url });
+    saveCustom(custom);
+    $("tvAddName").value = ""; $("tvAddUrl").value = "";
+    $("tvAddPanel").classList.add("hidden");
+    renderSources(); renderCustomList();
+    state.listIndex = sources().findIndex((s) => s.custom && s.url === url);
+    document.querySelectorAll("#tvLists .chip").forEach((c, i) => c.classList.toggle("active", i === state.listIndex));
+    loadList(state.listIndex);
+  });
+  $("tvAddChannel").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("tvChName").value.trim() || "Mi canal";
+    const url = $("tvChUrl").value.trim();
+    if (!url) return;
+    custom.channels.push({ name, url });
+    saveCustom(custom);
+    $("tvChName").value = ""; $("tvChUrl").value = "";
+    $("tvAddPanel").classList.add("hidden");
+    renderSources(); renderCustomList();
+    // ir a "Mis canales" y reproducir el recién agregado
+    const idx = sources().findIndex((s) => s.virtual);
+    state.listIndex = idx;
+    document.querySelectorAll("#tvLists .chip").forEach((c, i) => c.classList.toggle("active", i === idx));
+    loadList(idx);
   });
   $("tvSearch").addEventListener("input", (e) => { state.query = e.target.value.trim(); renderChannels(); });
   $("tvGroup").addEventListener("change", (e) => { state.group = e.target.value; renderChannels(); });
@@ -206,6 +319,19 @@ export function initTv() {
   });
   $("tvPrev").addEventListener("click", () => zap(-1));
   $("tvNext").addEventListener("click", () => zap(1));
+  $("tvVlc").addEventListener("click", sendToVlc);
+
+  // Proxy de TV personalizado (para móvil/otros equipos)
+  if ($("tvProxyUrl")) $("tvProxyUrl").value = userProxy();
+  $("tvProxyForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = $("tvProxyUrl").value.trim();
+    try { localStorage.setItem("anilector.proxyurl", v); } catch (_) {}
+    // limpiar caché de listas para recargar por el nuevo proxy
+    for (const k of Object.keys(cache)) delete cache[k];
+    $("tvAddPanel").classList.add("hidden");
+    loadList(state.listIndex);
+  });
   // teclado: flechas para zapear cuando la vista TV está activa
   document.addEventListener("keydown", (e) => {
     if ($("viewTv").classList.contains("hidden")) return;
@@ -213,6 +339,31 @@ export function initTv() {
     if (e.key === "ArrowUp") { e.preventDefault(); zap(-1); }
     if (e.key === "ArrowDown") { e.preventDefault(); zap(1); }
   });
+}
+
+// Panel: administrar fuentes personalizadas (eliminar)
+function renderCustomList() {
+  const box = $("tvCustomList");
+  if (!box) return;
+  const items = [
+    ...custom.lists.map((l, i) => ({ kind: "list", i, label: `📃 ${l.name}` })),
+    ...custom.channels.map((c, i) => ({ kind: "ch", i, label: `⭐ ${c.name}` })),
+  ];
+  box.innerHTML = items.length
+    ? items.map((it) => `<div class="tv-custom-item"><span>${esc(it.label)}</span>
+        <button class="btn btn-ghost btn-mini" data-del="${it.kind}:${it.i}">🗑</button></div>`).join("")
+    : `<span class="tv-note">${t("tv.noCustom")}</span>`;
+  box.querySelectorAll("[data-del]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const [kind, i] = b.dataset.del.split(":");
+      if (kind === "list") custom.lists.splice(Number(i), 1);
+      else custom.channels.splice(Number(i), 1);
+      saveCustom(custom);
+      state.listIndex = 0;
+      renderSources(); renderCustomList();
+      document.querySelectorAll("#tvLists .chip").forEach((c, k) => c.classList.toggle("active", k === 0));
+      loadList(0);
+    }));
 }
 
 let loaded = false;

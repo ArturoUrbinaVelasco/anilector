@@ -80,6 +80,7 @@
   <nav class="main-nav" role="tablist">
     <button class="nav-tab active" data-view="tv">📺 <span data-i18n="nav.tv">TV en vivo</span></button>
     <button class="nav-tab" data-view="vod">🎬 <span data-i18n="nav.vod">Películas</span></button>
+    <button class="nav-tab" data-view="yt">▶️ <span data-i18n="nav.yt">YouTube</span></button>
     <button class="nav-tab" data-view="web">🌐 <span data-i18n="nav.web">Sitios</span></button>
     <button class="nav-tab" data-view="search" data-cat="anime">🎞️ <span data-i18n="nav.anime">Anime</span></button>
     <button class="nav-tab" data-view="search" data-cat="manga">📖 <span data-i18n="nav.manga">Manga</span></button>
@@ -95,6 +96,37 @@
 
     <div id="tvLists" class="tv-lists"></div>
 
+    <div id="tvAddPanel" class="tv-add-panel hidden">
+      <div class="tv-add-col">
+        <h4 data-i18n="tv.addListTitle">📃 Añadir lista M3U</h4>
+        <form id="tvAddList" class="url-form">
+          <input id="tvAddName" type="text" data-i18n-placeholder="tv.namePh" placeholder="Nombre (opcional)" />
+          <input id="tvAddUrl" type="url" data-i18n-placeholder="tv.m3uPh" placeholder="https://…/lista.m3u" required />
+          <button class="btn btn-primary" type="submit" data-i18n="tv.addBtn">Añadir</button>
+        </form>
+      </div>
+      <div class="tv-add-col">
+        <h4 data-i18n="tv.addChTitle">⭐ Añadir canal directo</h4>
+        <form id="tvAddChannel" class="url-form">
+          <input id="tvChName" type="text" data-i18n-placeholder="tv.namePh" placeholder="Nombre (opcional)" />
+          <input id="tvChUrl" type="url" data-i18n-placeholder="tv.streamPh" placeholder="https://…/stream.m3u8" required />
+          <button class="btn btn-primary" type="submit" data-i18n="tv.addBtn">Añadir</button>
+        </form>
+      </div>
+      <div class="tv-add-col">
+        <h4 data-i18n="tv.manageTitle">🗂️ Mis fuentes</h4>
+        <div id="tvCustomList" class="tv-custom-list"></div>
+      </div>
+      <div class="tv-add-col">
+        <h4 data-i18n="tv.proxyTitle">🛡️ Proxy de TV (para móvil/otros equipos)</h4>
+        <form id="tvProxyForm" class="url-form">
+          <input id="tvProxyUrl" type="url" data-i18n-placeholder="tv.proxyPh" placeholder="https://tu-servidor-de-casa" />
+          <button class="btn btn-primary" type="submit" data-i18n="tv.proxySave">Guardar</button>
+        </form>
+        <p class="tv-note" data-i18n="tv.proxyHelp">Pega la dirección de tu servidor local (o su túnel) para reproducir tus canales desde cualquier dispositivo. Vacío = automático.</p>
+      </div>
+    </div>
+
     <div class="tv-layout">
       <!-- Reproductor fijo -->
       <section class="tv-stage">
@@ -104,6 +136,7 @@
             <div class="tv-player-actions">
               <button id="tvPrev" class="btn btn-ghost btn-mini" title="Canal anterior">⏮</button>
               <button id="tvNext" class="btn btn-ghost btn-mini" title="Canal siguiente">⏭</button>
+              <button id="tvVlc" class="btn btn-ghost btn-mini" title="Enviar a VLC">🎬 VLC</button>
               <a id="tvExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
             </div>
           </div>
@@ -130,10 +163,34 @@
     </div>
   </main>
 
+  <!-- ======= VISTA: YOUTUBE ======= -->
+  <main id="viewYt" class="view hidden">
+    <h2 class="view-title" data-i18n="yt.title">▶️ YouTube</h2>
+    <p class="tv-note" data-i18n="yt.note">Busca y reproduce videos de YouTube dentro de la app (reproductor oficial). También puedes pegar un enlace de YouTube.</p>
+    <div id="ytSources" class="tv-lists"></div>
+    <form id="ytForm" class="url-form">
+      <input id="ytSearch" type="search" data-i18n-placeholder="yt.ph" placeholder="Buscar o pegar enlace de YouTube…" />
+      <button class="btn btn-primary" type="submit" data-i18n="yt.search">Buscar</button>
+    </form>
+    <div id="ytPlayer" class="tv-player hidden" style="margin-bottom:1rem">
+      <div class="tv-player-bar">
+        <span id="ytNow" class="tv-now">—</span>
+        <div class="tv-player-actions">
+          <a id="ytExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en YouTube">↗</a>
+          <button id="ytClose" class="btn btn-ghost btn-mini" title="Cerrar">✕</button>
+        </div>
+      </div>
+      <div class="tv-video-wrap">
+        <iframe id="ytFrame" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      </div>
+    </div>
+    <div id="ytGrid" class="cards-grid"></div>
+  </main>
+
   <!-- ======= VISTA: SITIOS (navegador integrado) ======= -->
   <main id="viewWeb" class="view hidden">
     <h2 class="view-title" data-i18n="web.title">🌐 Sitios</h2>
-    <p class="tv-note" data-i18n="web.note">Abre un sitio dentro de AniLector. Algunos sitios no permiten mostrarse embebidos; en ese caso usa el botón para abrirlo en pestaña nueva.</p>
+    <p class="tv-note" data-i18n="web.note">Abre un sitio dentro de AniLector. Usa el motor del navegador con el que abres la app: para Brave (open source), abre AniLector en Brave. Algunos sitios no permiten mostrarse embebidos; ahí usa el botón de pestaña nueva.</p>
     <form id="webForm" class="url-form">
       <input id="webUrl" type="text" data-i18n-placeholder="web.ph" placeholder="https://… o pega la URL de greentube" />
       <button class="btn btn-primary" type="submit" data-i18n="web.open">Abrir</button>
