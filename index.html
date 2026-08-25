@@ -12,6 +12,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.93/epub.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js" defer></script>
 </head>
 <body>
   <!-- ======= HEADER ======= -->
@@ -77,15 +78,44 @@
 
   <!-- ======= NAVEGACIÓN PRINCIPAL ======= -->
   <nav class="main-nav" role="tablist">
-    <button class="nav-tab active" data-view="search" data-cat="anime">🎬 <span data-i18n="nav.anime">Anime</span></button>
+    <button class="nav-tab active" data-view="tv">📺 <span data-i18n="nav.tv">TV en vivo</span></button>
+    <button class="nav-tab" data-view="search" data-cat="anime">🎬 <span data-i18n="nav.anime">Anime</span></button>
     <button class="nav-tab" data-view="search" data-cat="manga">📖 <span data-i18n="nav.manga">Manga</span></button>
     <button class="nav-tab" data-view="search" data-cat="books">📚 <span data-i18n="nav.books">Libros</span></button>
     <button class="nav-tab" data-view="library">⭐ <span data-i18n="nav.library">Mi Biblioteca</span></button>
     <button class="nav-tab" data-view="reader">👓 <span data-i18n="nav.reader">Visor</span></button>
   </nav>
 
+  <!-- ======= VISTA: TV EN VIVO ======= -->
+  <main id="viewTv" class="view">
+    <h2 class="view-title" data-i18n="tv.title">📺 TV en vivo</h2>
+    <p class="tv-note" data-i18n="tv.note">Canales abiertos y gratuitos de listas M3U de código abierto (comunidad). Prioridad México.</p>
+
+    <div id="tvPlayer" class="tv-player hidden">
+      <div class="tv-player-bar">
+        <span id="tvNow" class="tv-now">—</span>
+        <div class="tv-player-actions">
+          <a id="tvExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
+          <button id="tvClose" class="btn btn-ghost btn-mini" title="Cerrar">✕</button>
+        </div>
+      </div>
+      <video id="tvVideo" controls playsinline></video>
+      <div id="tvError" class="tv-error hidden"></div>
+    </div>
+
+    <div id="tvLists" class="tv-lists"></div>
+
+    <div class="tv-filters">
+      <input id="tvSearch" type="search" data-i18n-placeholder="tv.searchPh" placeholder="Buscar canal…" class="tv-search" />
+      <select id="tvGroup" class="select-mini"></select>
+      <span id="tvInfo" class="results-info"></span>
+    </div>
+
+    <div id="tvGrid" class="tv-grid"></div>
+  </main>
+
   <!-- ======= VISTA: RESULTADOS ======= -->
-  <main id="viewSearch" class="view">
+  <main id="viewSearch" class="view hidden">
     <div id="resultsInfo" class="results-info"></div>
     <div id="resultsGrid" class="cards-grid"></div>
     <div id="loadMoreWrap" class="load-more hidden">

@@ -11,6 +11,7 @@ import {
   openLocalFiles, openUrl, openIframe, openGoogleBook, closeViewer, bindViewerControls,
 } from "./viewer.js";
 import { initAuth } from "./auth.js";
+import { initTv, ensureTvLoaded, pauseTv } from "./tv.js";
 
 /* ---------- estado ---------- */
 const S = {
@@ -110,6 +111,7 @@ function cardHTML(item, { library = false } = {}) {
 /* ---------- vistas ---------- */
 function showView(view) {
   S.view = view;
+  $("viewTv").classList.toggle("hidden", view !== "tv");
   $("viewSearch").classList.toggle("hidden", view !== "search");
   $("viewLibrary").classList.toggle("hidden", view !== "library");
   $("viewReader").classList.toggle("hidden", view !== "reader");
@@ -120,6 +122,8 @@ function showView(view) {
     b.classList.toggle("active", active);
   });
   if (view === "library") renderLibrary();
+  if (view === "tv") ensureTvLoaded();
+  else pauseTv(); // no reproducir en segundo plano
 }
 
 /* ---------- búsqueda ---------- */
@@ -539,7 +543,8 @@ function bindEvents() {
         const changed = S.cat !== b.dataset.cat;
         S.cat = b.dataset.cat;
         showView("search");
-        if (changed) { await loadGenres(); runSearch(); }
+        if (changed) await loadGenres();
+        if (changed || !S.items.length) runSearch();
       } else showView(b.dataset.view);
     }));
 
@@ -551,7 +556,7 @@ function bindEvents() {
       renderLibrary();
     }));
 
-  $("brandHome").addEventListener("click", () => showView("search"));
+  $("brandHome").addEventListener("click", () => showView("tv"));
   $("explorePopular").addEventListener("click", () => runSearch());
   $("loadMoreBtn").addEventListener("click", () => runSearch({ append: true }));
 
@@ -649,8 +654,9 @@ function init() {
   loadGenres();
   renderRecent();
   bindEvents();
-  // carga inicial: populares de anime
-  runSearch();
+  initTv();
+  // Página de inicio: TV en vivo
+  showView("tv");
 }
 
 init();

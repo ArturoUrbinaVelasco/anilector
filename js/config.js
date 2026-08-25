@@ -47,3 +47,15 @@ export const MANGA_SITES = [
    Ej: "https://anilector-api.vercel.app"  (sin barra final)
    ------------------------------------------------------------ */
 export const BACKEND_URL = "";
+
+/* ------------------------------------------------------------
+   TV en vivo — listas M3U de código abierto (comunidad, GitHub).
+   Agregan canales que se transmiten en ABIERTO y gratis por
+   internet (no canales de paga). Prioridad: México. Editable.
+   Si una lista deja de servir, cambia su URL aquí.
+   ------------------------------------------------------------ */
+export const M3U_LISTS = [
+  { name: "México · iptv-org", flag: "🇲🇽", url: "https://iptv-org.github.io/iptv/countries/mx.m3u" },
+  { name: "México · Free-TV", flag: "🇲🇽", url: "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlists/playlist_mexico.m3u8" },
+  { name: "Español · iptv-org", flag: "🌎", url: "https://iptv-org.github.io/iptv/languages/spa.m3u" },
+];
