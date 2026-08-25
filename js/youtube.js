@@ -4,7 +4,23 @@
    con el reproductor OFICIAL de YouTube (youtube-nocookie).
    ============================================================ */
 import { t } from "./i18n.js";
-import { PIPED_APIS, INVIDIOUS_APIS, YOUTUBE_API_KEY } from "./config.js";
+import { PIPED_APIS, INVIDIOUS_APIS, YOUTUBE_API_KEY, BACKEND_URL } from "./config.js";
+
+// GreenTuber: primero nuestro microservicio (server-side, sin CORS ni terceros
+// caídos); si no hay backend o falla, respaldo con Piped/Invidious.
+async function searchGreentuber(q) {
+  if (BACKEND_URL) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10000);
+      const res = await fetch(`${BACKEND_URL.replace(/\/$/, "")}/api/yt?q=${encodeURIComponent(q)}`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      const d = await res.json();
+      if (d.items?.length) return d.items;
+    } catch (_) { /* respaldo abajo */ }
+  }
+  return searchPiped(q);
+}
 
 const $ = (id) => document.getElementById(id);
 const state = { items: [], source: "piped" };
@@ -84,7 +100,9 @@ async function searchOfficial(q) {
 }
 
 function fmtDur(s) {
-  if (!s || s < 0) return "";
+  if (!s) return "";
+  if (typeof s === "string") return s; // ya viene como "4:20"
+  if (s < 0) return "";
   const m = Math.floor(s / 60), sec = s % 60;
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
@@ -130,7 +148,7 @@ async function doSearch(q) {
       }
       state.items = await searchOfficial(q);
     } else {
-      state.items = await searchPiped(q);
+      state.items = await searchGreentuber(q);
     }
     renderResults();
   } catch (e) {
