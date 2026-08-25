@@ -46,7 +46,7 @@ export const MANGA_SITES = [
    abre la búsqueda del sitio como respaldo. Guía en anilector-api/README.
    Ej: "https://anilector-api.vercel.app"  (sin barra final)
    ------------------------------------------------------------ */
-export const BACKEND_URL = "";
+export const BACKEND_URL = "https://anilector-api.vercel.app";
 
 /* ------------------------------------------------------------
    TV en vivo — listas M3U de código abierto (comunidad, GitHub).

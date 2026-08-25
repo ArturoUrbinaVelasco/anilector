@@ -3,7 +3,9 @@
    Parser M3U + reproductor HLS (hls.js) embebido en la app.
    ============================================================ */
 import { t } from "./i18n.js";
-import { M3U_LISTS } from "./config.js";
+import { M3U_LISTS, BACKEND_URL } from "./config.js";
+
+const proxied = (url) => `${BACKEND_URL.replace(/\/$/, "")}/api/hls?url=${encodeURIComponent(url)}`;
 
 const $ = (id) => document.getElementById(id);
 const state = { listIndex: 0, channels: [], group: "", query: "", hls: null, current: -1, view: [] };
@@ -123,7 +125,7 @@ function stopPlayback() {
   if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
 }
 
-function playIndex(idx) {
+function playIndex(idx, useProxy = false) {
   const channel = state.channels[idx];
   if (!channel) return;
   state.current = idx;
@@ -133,27 +135,38 @@ function playIndex(idx) {
   err.classList.add("hidden");
   ph.classList.add("hidden");
   v.classList.add("playing");
-  $("tvNow").textContent = channel.name;
+  $("tvNow").textContent = channel.name + (useProxy ? " · 🛡️" : "");
   $("tvExternal").href = channel.url;
   stopPlayback();
   highlightCurrent();
 
   const isHls = /\.m3u8(\?|$)/i.test(channel.url);
+  const src = useProxy && BACKEND_URL ? proxied(channel.url) : channel.url;
+
   const onFail = () => {
+    // 1º intento falla y hay proxy → reintentar por el proxy automáticamente
+    if (!useProxy && BACKEND_URL) return playIndex(idx, true);
+    // Sin proxy o ya falló también: mostrar opciones
     err.classList.remove("hidden");
-    err.innerHTML = `${t("tv.playError")} <a class="btn btn-primary btn-mini" href="${esc(channel.url)}" target="_blank" rel="noopener">${t("tv.openTab")}</a>`;
+    const retry = !BACKEND_URL
+      ? ""
+      : `<button class="btn btn-ghost btn-mini" id="tvRetryProxy">🛡️ ${t("tv.retryProxy")}</button>`;
+    err.innerHTML = `${t("tv.playError")} ${retry}
+      <a class="btn btn-primary btn-mini" href="${esc(channel.url)}" target="_blank" rel="noopener">${t("tv.openTab")}</a>`;
+    const rb = $("tvRetryProxy");
+    if (rb) rb.addEventListener("click", () => playIndex(idx, true));
   };
 
   try {
     if (isHls && window.Hls && window.Hls.isSupported()) {
-      const hls = new window.Hls({ maxBufferLength: 20 });
+      const hls = new window.Hls({ maxBufferLength: 20, manifestLoadingTimeOut: 12000 });
       state.hls = hls;
-      hls.loadSource(channel.url);
+      hls.loadSource(src);
       hls.attachMedia(v);
       hls.on(window.Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
       hls.on(window.Hls.Events.ERROR, (_e, data) => { if (data?.fatal) { stopPlayback(); onFail(); } });
     } else {
-      v.src = channel.url; // Safari (HLS nativo) o streams directos
+      v.src = src; // Safari (HLS nativo) o streams directos (mp4, etc.)
       v.play().catch(() => {});
       v.onerror = onFail;
     }
