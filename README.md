@@ -6,7 +6,8 @@ Aplicación web **responsiva, multilenguaje (ES/EN) y con temas** para buscar **
 
 ## ✨ Funciones
 
-- 📺 **TV en vivo (página de inicio)**: reproductor integrado con selección de 3 listas M3U de código abierto de la comunidad (iptv-org México, Free-TV México e iptv-org Español). Buscador de canales, filtro por categoría y reproducción HLS dentro del sitio. Solo canales de transmisión abierta; las listas son editables en `js/config.js`.
+- 📺 **TV en vivo (página de inicio)**: reproductor integrado con selección de 4 listas M3U de código abierto de la comunidad (iptv-org México, Free-TV México, iptv-org Español y Cine 24/7). Buscador de canales, filtro por categoría y reproducción HLS dentro del sitio. Solo canales de transmisión abierta; las listas son editables en `js/config.js`.
+- 🎬 **Películas (VOD)**: catálogo gratuito y legal de **Internet Archive** (dominio público y licencias libres) en cuadrícula estilo Netflix, con categorías (destacadas, ciencia ficción/terror, cine negro, animación, clásicos), buscador y reproducción embebida dentro de la app.
 
 - 🔎 **Búsqueda web** de anime y manga (Jikan / MyAnimeList) y libros (Open Library + Google Books) por **nombre, género, año, estado y orden** (relevancia, calificación, popularidad, novedad, título).
 - 📜 **Orden de visualización / lectura**: reconstruye la cadena *precuela → secuela* con el conteo de episodios/capítulos/tomos de cada entrega, más historias paralelas y spin-offs.

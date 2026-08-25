@@ -58,4 +58,18 @@ export const M3U_LISTS = [
   { name: "México · iptv-org", flag: "🇲🇽", url: "https://iptv-org.github.io/iptv/countries/mx.m3u" },
   { name: "México · Free-TV", flag: "🇲🇽", url: "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlists/playlist_mexico.m3u8" },
   { name: "Español · iptv-org", flag: "🌎", url: "https://iptv-org.github.io/iptv/languages/spa.m3u" },
+  { name: "Cine 24/7 · iptv-org", flag: "🎬", url: "https://iptv-org.github.io/iptv/categories/movies.m3u" },
+];
+
+/* ------------------------------------------------------------
+   Películas (VOD) — Internet Archive (dominio público / libres).
+   Catálogo 100% legal y gratuito. Categorías editables (son
+   "colecciones" reales de archive.org).
+   ------------------------------------------------------------ */
+export const VOD_COLLECTIONS = [
+  { name: "Destacadas", collection: "feature_films" },
+  { name: "Ciencia ficción y terror", collection: "SciFi_Horror" },
+  { name: "Cine negro", collection: "film_noir" },
+  { name: "Animación", collection: "animationandcartoons" },
+  { name: "Clásicos", collection: "classic_tv" },
 ];

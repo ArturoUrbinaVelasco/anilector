@@ -79,7 +79,8 @@
   <!-- ======= NAVEGACIÓN PRINCIPAL ======= -->
   <nav class="main-nav" role="tablist">
     <button class="nav-tab active" data-view="tv">📺 <span data-i18n="nav.tv">TV en vivo</span></button>
-    <button class="nav-tab" data-view="search" data-cat="anime">🎬 <span data-i18n="nav.anime">Anime</span></button>
+    <button class="nav-tab" data-view="vod">🎬 <span data-i18n="nav.vod">Películas</span></button>
+    <button class="nav-tab" data-view="search" data-cat="anime">🎞️ <span data-i18n="nav.anime">Anime</span></button>
     <button class="nav-tab" data-view="search" data-cat="manga">📖 <span data-i18n="nav.manga">Manga</span></button>
     <button class="nav-tab" data-view="search" data-cat="books">📚 <span data-i18n="nav.books">Libros</span></button>
     <button class="nav-tab" data-view="library">⭐ <span data-i18n="nav.library">Mi Biblioteca</span></button>
@@ -112,6 +113,19 @@
     </div>
 
     <div id="tvGrid" class="tv-grid"></div>
+  </main>
+
+  <!-- ======= VISTA: PELÍCULAS (VOD) ======= -->
+  <main id="viewVod" class="view hidden">
+    <h2 class="view-title" data-i18n="vod.title">🎬 Películas</h2>
+    <p class="tv-note" data-i18n="vod.note">Catálogo gratuito y legal de Internet Archive (dominio público y licencias libres).</p>
+    <div id="vodCats" class="tv-lists"></div>
+    <div class="tv-filters">
+      <input id="vodSearch" type="search" data-i18n-placeholder="vod.searchPh" placeholder="Buscar película…" class="tv-search" />
+      <span id="vodInfo" class="results-info"></span>
+    </div>
+    <div id="vodGrid" class="cards-grid"></div>
+    <div class="load-more"><button id="vodMore" class="btn btn-primary hidden" data-i18n="search.loadMore">Cargar más</button></div>
   </main>
 
   <!-- ======= VISTA: RESULTADOS ======= -->
