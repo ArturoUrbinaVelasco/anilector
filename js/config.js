@@ -74,8 +74,16 @@ export const M3U_LISTS = [
    Ej: { name: "Greentube", url: "https://…" }
    ------------------------------------------------------------ */
 export const WEB_APPS = [
+  // { name: "Mi Screenarr", url: "http://192.168.1.50:7878" },  // tu panel autohospedado
   // { name: "Mi sitio", url: "https://tu-sitio.example" },
 ];
+
+/* Buscador de Google DENTRO de la app (Programmable Search Engine).
+   Como la página de google.com no se puede embeber, se usa el buscador
+   oficial embebible de Google. Crea uno gratis en
+   https://programmablesearchengine.google.com (marca "Buscar en toda la web")
+   y pega aquí el ID del buscador (cx). Vacío = el buscador abre en pestaña nueva. */
+export const GOOGLE_CSE_ID = "";
 
 /* ------------------------------------------------------------
    YouTube (estilo GreenTuber): búsqueda vía instancias Piped
@@ -114,4 +122,13 @@ export const VOD_COLLECTIONS = [
   { name: "Western", query: 'subject:(western)' },
   { name: "Documentales", query: 'subject:(documentary)' },
   { name: "Animación", collection: "animationandcartoons" },
+];
+
+/* Series retro / TV clásica (Internet Archive, dominio público). Editable. */
+export const RETRO_COLLECTIONS = [
+  { name: "TV clásica", collection: "classic_tv" },
+  { name: "Caricaturas retro", collection: "animationandcartoons" },
+  { name: "Ciencia ficción TV", query: 'subject:(television) AND subject:("science fiction")' },
+  { name: "En español", query: 'subject:(television) AND language:(Spanish OR spanish)' },
+  { name: "Todo TV retro", query: 'subject:(television)' },
 ];
