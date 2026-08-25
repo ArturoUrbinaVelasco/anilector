@@ -13,7 +13,7 @@ import { GOOGLE_CLIENT_ID } from "./config.js";
 const SCOPES =
   "openid email profile https://www.googleapis.com/auth/drive.appdata";
 const FILE_NAME = "anilector-datos.json";
-const KEYS = ["anilector.library", "anilector.progress", "anilector.recent", "anilector.seen"];
+const KEYS = ["anilector.library", "anilector.progress", "anilector.recent", "anilector.seen", "anilector.sites"];
 
 let tokenClient = null;
 let accessToken = null;
@@ -131,6 +131,7 @@ function collectLocal() {
     progress: readKey(KEYS[1]) || {},
     recent: readKey(KEYS[2]) || [],
     seen: readKey(KEYS[3]) || {},
+    sites: readKey(KEYS[4]) || [],
     updatedAt: Date.now(),
   };
 }
@@ -140,7 +141,16 @@ function applyMerged(m) {
     localStorage.setItem(KEYS[1], JSON.stringify(m.progress || {}));
     localStorage.setItem(KEYS[2], JSON.stringify(m.recent || []));
     localStorage.setItem(KEYS[3], JSON.stringify(m.seen || {}));
+    localStorage.setItem(KEYS[4], JSON.stringify(m.sites || []));
   } catch (_) {}
+}
+// Une los sitios favoritos de ambos equipos sin duplicar (clave: la URL).
+function mergeSites(remote, local) {
+  const key = (s) => String(s.url || "").trim().replace(/\/$/, "").toLowerCase();
+  const byUrl = new Map();
+  for (const s of remote || []) if (s?.url) byUrl.set(key(s), s);
+  for (const s of local || []) if (s?.url) byUrl.set(key(s), s); // lo local gana (renombres recientes)
+  return [...byUrl.values()];
 }
 // Fusiona vistos/leídos por título, uniendo episodios y capítulos de ambos lados.
 function mergeSeen(remote, local) {
@@ -172,6 +182,7 @@ function merge(remote, local) {
     progress: { ...(remote.progress || {}), ...(local.progress || {}) },
     recent: [...new Set([...(local.recent || []), ...(remote.recent || [])])].slice(0, 5),
     seen: mergeSeen(remote.seen || {}, local.seen || {}),
+    sites: mergeSites(remote.sites, local.sites),
     updatedAt: Date.now(),
   };
 }

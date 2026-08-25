@@ -1,29 +1,35 @@
 /* ============================================================
    AniLector — YouTube (estilo GreenTuber)
-   Búsqueda vía Piped (frontend abierto de YouTube) + reproducción
-   con el reproductor OFICIAL de YouTube (youtube-nocookie).
+   Búsqueda vía microservicio (o Piped/Invidious de respaldo) y
+   reproducción con el reproductor OFICIAL de YouTube.
+
+   Lo que hace que se sienta como YouTube y no como una lista fija:
+   · Usa la IFrame API (enablejsapi) para SABER cuándo termina un video.
+     Un iframe normal no avisa de nada, y por eso antes se quedaba
+     parado al acabar.
+   · Al terminar, encadena con el siguiente de la cola (una lista de
+     reproducción o los resultados) y, si no hay, con los RELACIONADOS
+     del video que se acaba de ver — que se recargan en cada video.
+   · Los resultados incluyen LISTAS de reproducción y un botón para
+     traer más páginas.
    ============================================================ */
 import { t } from "./i18n.js";
 import { PIPED_APIS, INVIDIOUS_APIS, BACKEND_URL } from "./config.js";
 
-// GreenTuber: primero nuestro microservicio (server-side, sin CORS ni terceros
-// caídos); si no hay backend o falla, respaldo con Piped/Invidious.
-async function searchGreentuber(q) {
-  if (BACKEND_URL) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 10000);
-      const res = await fetch(`${BACKEND_URL.replace(/\/$/, "")}/api/yt?q=${encodeURIComponent(q)}`, { signal: ctrl.signal });
-      clearTimeout(timer);
-      const d = await res.json();
-      if (d.items?.length) return d.items;
-    } catch (_) { /* respaldo abajo */ }
-  }
-  return searchPiped(q);
-}
-
 const $ = (id) => document.getElementById(id);
-const state = { items: [] };
+const API = (BACKEND_URL || "").replace(/\/$/, "");
+
+const state = {
+  items: [],          // lo que se ve en el grid
+  nextPage: null,     // token para "ver más resultados"
+  lastQuery: "",
+  queue: [],          // cola de reproducción (lista o resultados)
+  qIndex: -1,
+  current: null,      // { id, title }
+  related: [],        // relacionados del video actual
+  autoplay: true,
+  history: [],        // ids ya reproducidos, para no repetir en cadena
+};
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -32,10 +38,51 @@ function esc(s) {
 
 // Extrae el ID de video de una URL o texto de YouTube (o devuelve null)
 function videoId(input) {
-  const s = input.trim();
+  const s = String(input || "").trim();
   if (/^[\w-]{11}$/.test(s)) return s;
-  const m = s.match(/(?:v=|\/embed\/|youtu\.be\/|\/shorts\/)([\w-]{11})/);
+  const m = s.match(/(?:v=|\/embed\/|youtu\.be\/|\/shorts\/|\/live\/)([\w-]{11})/);
   return m ? m[1] : null;
+}
+// Extrae el ID de una lista de reproducción de una URL
+function listId(input) {
+  const m = String(input || "").match(/[?&]list=([\w-]+)/);
+  return m ? m[1] : null;
+}
+
+function fmtDur(s) {
+  if (!s) return "";
+  if (typeof s === "string") return s; // ya viene como "4:20"
+  if (s < 0) return "";
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return h
+    ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+    : `${m}:${String(sec).padStart(2, "0")}`;
+}
+function fmtViews(n) {
+  if (!n) return "";
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)} K`;
+  return String(n);
+}
+
+/* ---------- llamadas al microservicio (con respaldo) ---------- */
+async function apiGet(params, timeout = 12000) {
+  if (!API) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const res = await fetch(`${API}/api/yt?${new URLSearchParams(params)}`, { signal: ctrl.signal });
+    const d = await res.json();
+    return d && !d.error ? d : (d?.items?.length ? d : null);
+  } catch (_) { return null; }
+  finally { clearTimeout(timer); }
+}
+
+async function searchGreentuber(q) {
+  const d = await apiGet({ q });
+  if (d?.items?.length) return { items: d.items, nextPage: d.nextPage || null };
+  const items = await searchPiped(q);
+  return { items, nextPage: null };
 }
 
 async function searchPiped(q) {
@@ -44,20 +91,12 @@ async function searchPiped(q) {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(`${base}/search?q=${encodeURIComponent(q)}&filter=videos`, { signal: ctrl.signal });
+      // filter=all para que también lleguen las listas de reproducción
+      const res = await fetch(`${base}/search?q=${encodeURIComponent(q)}&filter=all`, { signal: ctrl.signal });
       clearTimeout(timer);
       if (!res.ok) throw new Error(`${res.status}`);
       const d = await res.json();
-      const items = (d.items || d || [])
-        .filter((i) => i.url || i.videoId)
-        .map((i) => ({
-          id: (i.url && i.url.split("v=")[1]) || i.videoId,
-          title: i.title,
-          uploader: i.uploaderName || i.author || "",
-          thumb: i.thumbnail || i.thumbnails?.[0]?.url || "",
-          duration: i.duration,
-        }))
-        .filter((i) => i.id);
+      const items = (d.items || d || []).map(fromPiped).filter(Boolean);
       if (items.length) return items;
     } catch (e) { lastErr = e; }
   }
@@ -66,73 +105,352 @@ async function searchPiped(q) {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(`${base}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, { signal: ctrl.signal });
+      const res = await fetch(`${base}/api/v1/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal });
       clearTimeout(timer);
       if (!res.ok) throw new Error(`${res.status}`);
       const d = await res.json();
-      const items = (d || [])
-        .filter((i) => i.videoId)
-        .map((i) => ({
-          id: i.videoId,
-          title: i.title,
-          uploader: i.author || "",
-          thumb: (i.videoThumbnails || []).find((th) => th.quality === "medium")?.url || i.videoThumbnails?.[0]?.url || "",
-          duration: i.lengthSeconds,
-        }));
+      const items = (d || []).map(fromInvidious).filter(Boolean);
       if (items.length) return items;
     } catch (e) { lastErr = e; }
   }
   throw lastErr || new Error("sin resultados");
 }
 
-function fmtDur(s) {
-  if (!s) return "";
-  if (typeof s === "string") return s; // ya viene como "4:20"
-  if (s < 0) return "";
-  const m = Math.floor(s / 60), sec = s % 60;
-  return `${m}:${String(sec).padStart(2, "0")}`;
+function fromPiped(i) {
+  const isList = i.type === "playlist" || /^\/playlist/.test(i.url || "");
+  if (isList) {
+    const id = i.playlistId || (i.url || "").split("list=")[1];
+    if (!id) return null;
+    return {
+      type: "playlist", id, title: i.name || i.title || "",
+      uploader: i.uploaderName || "", thumb: i.thumbnail || "",
+      videoCount: i.videos > 0 ? i.videos : null,
+    };
+  }
+  const id = i.videoId || (i.url || "").split("v=")[1];
+  if (!id || i.type === "channel") return null;
+  return {
+    type: "video", id, title: i.title || i.name || "",
+    uploader: i.uploaderName || i.author || "",
+    thumb: i.thumbnail || i.thumbnails?.[0]?.url || "",
+    duration: fmtDur(i.duration), seconds: typeof i.duration === "number" ? i.duration : null,
+    views: i.views > 0 ? i.views : null,
+  };
+}
+function fromInvidious(i) {
+  if (i.type === "playlist" && i.playlistId) {
+    return {
+      type: "playlist", id: i.playlistId, title: i.title || "",
+      uploader: i.author || "", thumb: i.playlistThumbnail || "",
+      videoCount: i.videoCount || null,
+    };
+  }
+  if (!i.videoId) return null;
+  return {
+    type: "video", id: i.videoId, title: i.title || "", uploader: i.author || "",
+    thumb: (i.videoThumbnails || []).find((th) => th.quality === "medium")?.url || i.videoThumbnails?.[0]?.url || "",
+    duration: fmtDur(i.lengthSeconds), seconds: i.lengthSeconds || null,
+    views: i.viewCount || null,
+  };
 }
 
-function play(id, title) {
+// Relacionados: microservicio y, si no, /streams de Piped.
+async function fetchRelated(id) {
+  const d = await apiGet({ related: id });
+  if (d?.items?.length) return d.items;
+  for (const base of PIPED_APIS) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 7000);
+      const res = await fetch(`${base}/streams/${id}`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const d2 = await res.json();
+      const items = (d2.relatedStreams || []).map(fromPiped).filter((x) => x && x.type === "video");
+      if (items.length) return items;
+    } catch (_) {}
+  }
+  return [];
+}
+
+async function fetchPlaylist(id) {
+  const d = await apiGet({ playlist: id });
+  if (d?.items?.length) return d;
+  for (const base of PIPED_APIS) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(`${base}/playlists/${id}`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const d2 = await res.json();
+      const items = (d2.relatedStreams || []).map(fromPiped).filter((x) => x && x.type === "video");
+      if (items.length) return { id, title: d2.name || "", items };
+    } catch (_) {}
+  }
+  return { id, title: "", items: [] };
+}
+
+/* ---------- reproductor con IFrame API ----------
+   Sin la API el iframe es una caja negra: no avisa cuándo acaba el
+   video, que es justo lo que hace falta para encadenar el siguiente. */
+let ytApiReady = null;
+let player = null;
+function loadIframeApi() {
+  if (ytApiReady) return ytApiReady;
+  ytApiReady = new Promise((resolve, reject) => {
+    if (window.YT?.Player) return resolve();
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { try { prev?.(); } catch (_) {} resolve(); };
+    const s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    s.onerror = () => reject(new Error("IFrame API"));
+    document.head.appendChild(s);
+    setTimeout(() => reject(new Error("IFrame API timeout")), 12000);
+  }).catch((e) => { ytApiReady = null; throw e; });
+  return ytApiReady;
+}
+
+function onPlayerState(ev) {
+  // 0 = ENDED
+  if (ev.data === 0) playNext();
+}
+
+async function mountPlayer(id) {
+  await loadIframeApi();
+  if (player?.loadVideoById) { player.loadVideoById(id); return; }
+  // Si quedó un iframe del respaldo, hay que devolver el hueco a <div>.
+  if ($("ytFrame")?.tagName === "IFRAME") resetPlayerHost();
+  player = new window.YT.Player("ytFrame", {
+    videoId: id,
+    playerVars: { autoplay: 1, rel: 0, playsinline: 1, modestbranding: 1 },
+    events: { onStateChange: onPlayerState },
+  });
+}
+
+/* Respaldo si la IFrame API no carga (bloqueada, sin red…): iframe
+   normal. El video se ve; lo único que se pierde es el encadenado
+   automático, porque un iframe suelto no avisa cuándo termina. */
+function mountPlain(id) {
+  const host = $("ytFrame");
+  if (!host) return;
+  const src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
+  if (host.tagName === "IFRAME") { host.src = src; return; }
+  const f = document.createElement("iframe");
+  f.id = "ytFrame";
+  f.src = src;
+  f.allow = "autoplay; encrypted-media; fullscreen; picture-in-picture";
+  f.allowFullscreen = true;
+  f.referrerPolicy = "strict-origin-when-cross-origin";
+  host.replaceWith(f);
+}
+
+/* Deja el hueco listo para volver a montar el reproductor. */
+function resetPlayerHost() {
+  try { player?.destroy?.(); } catch (_) {}
+  player = null;
+  const el = $("ytFrame");
+  if (el) {
+    const div = document.createElement("div");
+    div.id = "ytFrame";
+    el.replaceWith(div);
+  }
+}
+
+async function play(id, title, { queue = null, index = -1 } = {}) {
+  if (!id) return;
+  state.current = { id, title: title || id };
+  if (queue) { state.queue = queue; state.qIndex = index; }
+  else if (state.queue.length) {
+    const i = state.queue.findIndex((v) => v.id === id);
+    state.qIndex = i;
+  }
+  if (!state.history.includes(id)) state.history.push(id);
+
   $("ytPlayer").classList.remove("hidden");
   $("ytNow").textContent = title || id;
   $("ytExternal").href = `https://www.youtube.com/watch?v=${id}`;
-  $("ytFrame").src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
+  try { await mountPlayer(id); }
+  catch (_) { mountPlain(id); }
   $("ytPlayer").scrollIntoView({ behavior: "smooth", block: "start" });
+  markPlaying();
+  loadRelated(id);
 }
 
-function renderResults() {
-  const grid = $("ytGrid");
-  if (!state.items.length) {
-    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">🔎</div><p>${t("misc.noResults")}</p></div>`;
-    return;
-  }
-  grid.innerHTML = state.items.map((v) => `
-    <article class="card yt-card" data-id="${esc(v.id)}" data-title="${esc(v.title)}">
+/* Lo que corresponde reproducir después: primero la cola (una lista de
+   reproducción o los resultados), y si se acabó, el mejor relacionado. */
+function nextUp() {
+  if (state.qIndex >= 0 && state.qIndex + 1 < state.queue.length)
+    return state.queue[state.qIndex + 1];
+  const fresh = state.related.find((v) => !state.history.includes(v.id));
+  return fresh || state.related[0] || null;
+}
+
+function playNext() {
+  if (!state.autoplay) return;
+  const n = nextUp();
+  if (!n) return;
+  const inQueue = state.qIndex >= 0 && state.queue[state.qIndex + 1]?.id === n.id;
+  if (inQueue) play(n.id, n.title, { queue: state.queue, index: state.qIndex + 1 });
+  else play(n.id, n.title, { queue: state.related, index: state.related.findIndex((v) => v.id === n.id) });
+}
+
+async function loadRelated(id) {
+  const box = $("ytRelated");
+  if (!box) return;
+  box.innerHTML = `<div class="yt-rel-head">${t("yt.related")}</div>
+    <div class="loader"><div class="spinner"></div></div>`;
+  let items = [];
+  try { items = await fetchRelated(id); } catch (_) {}
+  if (state.current?.id !== id) return;      // el usuario ya cambió de video
+  state.related = items;
+  if (!items.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="yt-rel-head">${t("yt.related")}</div>` +
+    items.slice(0, 20).map((v) => `
+      <button class="yt-rel" data-id="${esc(v.id)}" data-title="${esc(v.title)}">
+        <span class="yt-rel-thumb">
+          ${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy" onerror="this.style.display='none'"/>` : "▶"}
+          ${v.duration ? `<span class="yt-dur">${esc(fmtDur(v.duration))}</span>` : ""}
+        </span>
+        <span class="yt-rel-info">
+          <span class="yt-rel-title">${esc(v.title)}</span>
+          <span class="yt-rel-meta">${esc(v.uploader || "")}${v.views ? ` · ${fmtViews(v.views)}` : ""}</span>
+        </span>
+      </button>`).join("");
+  updateNextLabel();
+}
+
+function updateNextLabel() {
+  const b = $("ytNext");
+  if (!b) return;
+  const n = nextUp();
+  b.disabled = !n;
+  b.title = n ? `${t("yt.next")}: ${n.title}` : t("yt.next");
+}
+
+function markPlaying() {
+  document.querySelectorAll(".yt-card").forEach((c) =>
+    c.classList.toggle("playing", c.dataset.id === state.current?.id));
+  document.querySelectorAll(".yt-rel").forEach((c) =>
+    c.classList.toggle("playing", c.dataset.id === state.current?.id));
+  updateNextLabel();
+}
+
+/* ---------- resultados ---------- */
+function cardHTML(v) {
+  if (v.type === "playlist") {
+    return `
+    <article class="card yt-card yt-playlist" data-list="${esc(v.id)}" data-title="${esc(v.title)}">
       <div class="yt-thumb-wrap">
-        ${v.thumb ? `<img class="yt-thumb" loading="lazy" src="${esc(v.thumb)}" alt="" onerror="this.style.display='none'"/>` : `<div class="yt-thumb yt-thumb-ph">▶</div>`}
-        ${v.duration ? `<span class="yt-dur">${fmtDur(v.duration)}</span>` : ""}
+        ${v.thumb ? `<img class="yt-thumb" loading="lazy" src="${esc(v.thumb)}" alt="" onerror="this.style.display='none'"/>` : `<div class="yt-thumb yt-thumb-ph">☰</div>`}
+        <span class="yt-listbadge">☰ ${v.videoCount ? `${v.videoCount} ` : ""}${t("yt.videos")}</span>
       </div>
       <div class="card-body">
         <h3 class="card-title">${esc(v.title)}</h3>
         <div class="card-meta">${v.uploader ? `<span>👤 ${esc(v.uploader)}</span>` : ""}</div>
       </div>
-    </article>`).join("");
+    </article>`;
+  }
+  return `
+    <article class="card yt-card" data-id="${esc(v.id)}" data-title="${esc(v.title)}">
+      <div class="yt-thumb-wrap">
+        ${v.thumb ? `<img class="yt-thumb" loading="lazy" src="${esc(v.thumb)}" alt="" onerror="this.style.display='none'"/>` : `<div class="yt-thumb yt-thumb-ph">▶</div>`}
+        ${v.duration ? `<span class="yt-dur">${esc(fmtDur(v.duration))}</span>` : ""}
+      </div>
+      <div class="card-body">
+        <h3 class="card-title">${esc(v.title)}</h3>
+        <div class="card-meta">
+          ${v.uploader ? `<span>👤 ${esc(v.uploader)}</span>` : ""}
+          ${v.views ? `<span>👁 ${fmtViews(v.views)}</span>` : ""}
+        </div>
+      </div>
+    </article>`;
+}
+
+function renderResults({ append = false } = {}) {
+  const grid = $("ytGrid");
+  if (!state.items.length) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">🔎</div><p>${t("misc.noResults")}</p></div>`;
+    $("ytMoreWrap").classList.add("hidden");
+    return;
+  }
+  const html = (append ? state.items.slice(grid.querySelectorAll(".yt-card").length) : state.items)
+    .map(cardHTML).join("");
+  if (append) grid.insertAdjacentHTML("beforeend", html);
+  else grid.innerHTML = html;
+  $("ytMoreWrap").classList.toggle("hidden", !state.nextPage);
+  markPlaying();
 }
 
 async function doSearch(q) {
   const grid = $("ytGrid");
-  // ¿Pegó un enlace/ID directo? → reproducir de una vez
+  // ¿Pegó una LISTA? → abrirla
+  const lid = listId(q);
+  if (lid) return openPlaylist(lid, q);
+  // ¿Pegó un enlace/ID de video? → reproducir de una vez
   const vid = videoId(q);
   if (vid) { play(vid, q); return; }
+
+  state.lastQuery = q;
   grid.innerHTML = `<div class="loader"><div class="spinner"></div><span>${t("misc.loading")}</span></div>`;
+  $("ytMoreWrap").classList.add("hidden");
   try {
-    state.items = await searchGreentuber(q);
+    const { items, nextPage } = await searchGreentuber(q);
+    state.items = items;
+    state.nextPage = nextPage;
     renderResults();
   } catch (e) {
+    state.items = []; state.nextPage = null;
     grid.innerHTML = `<div class="empty-state"><div class="empty-icon">📺</div>
       <p>${t("yt.searchError")}</p></div>`;
   }
+}
+
+async function loadMore() {
+  if (!state.nextPage) return;
+  const btn = $("ytMore");
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t("misc.loading");
+  const d = await apiGet({ page: state.nextPage });
+  btn.disabled = false;
+  btn.textContent = prev;
+  if (!d?.items?.length) {
+    state.nextPage = null;
+    $("ytMoreWrap").classList.add("hidden");
+    return;
+  }
+  const known = new Set(state.items.map((i) => `${i.type}:${i.id}`));
+  state.items = state.items.concat(d.items.filter((i) => !known.has(`${i.type}:${i.id}`)));
+  state.nextPage = d.nextPage || null;
+  renderResults({ append: true });
+}
+
+async function openPlaylist(id, label) {
+  const grid = $("ytGrid");
+  grid.innerHTML = `<div class="loader"><div class="spinner"></div><span>${t("misc.loading")}</span></div>`;
+  $("ytMoreWrap").classList.add("hidden");
+  const d = await fetchPlaylist(id);
+  if (!d.items.length) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">☰</div><p>${t("yt.emptyList")}</p></div>`;
+    return;
+  }
+  state.items = d.items;
+  state.nextPage = null;
+  renderResults();
+  // Encabezado con el nombre de la lista y botón de reproducir todo
+  const head = $("ytListHead");
+  head.classList.remove("hidden");
+  head.innerHTML = `<span class="yt-list-title">☰ ${esc(d.title || label || t("yt.list"))} · ${d.items.length} ${t("yt.videos")}</span>
+    <button class="btn btn-primary btn-mini" id="ytPlayAll">▶ ${t("yt.playAll")}</button>
+    <button class="btn btn-ghost btn-mini" id="ytBack">✕</button>`;
+  $("ytPlayAll").addEventListener("click", () =>
+    play(d.items[0].id, d.items[0].title, { queue: d.items, index: 0 }));
+  $("ytBack").addEventListener("click", () => {
+    head.classList.add("hidden");
+    if (state.lastQuery) doSearch(state.lastQuery);
+    else { state.items = []; renderResults(); }
+  });
 }
 
 export function initYouTube() {
@@ -141,12 +459,46 @@ export function initYouTube() {
     const q = $("ytSearch").value.trim();
     if (q) doSearch(q);
   });
+
   $("ytGrid").addEventListener("click", (e) => {
     const c = e.target.closest(".yt-card");
-    if (c) play(c.dataset.id, c.dataset.title);
+    if (!c) return;
+    if (c.dataset.list) return openPlaylist(c.dataset.list, c.dataset.title);
+    // Al elegir un resultado, la cola pasan a ser los resultados: al
+    // terminar sigue el siguiente de la lista, como en YouTube.
+    const videos = state.items.filter((i) => i.type !== "playlist");
+    const idx = videos.findIndex((v) => v.id === c.dataset.id);
+    play(c.dataset.id, c.dataset.title, { queue: videos, index: idx });
   });
+
+  $("ytRelated").addEventListener("click", (e) => {
+    const b = e.target.closest(".yt-rel");
+    if (!b) return;
+    const idx = state.related.findIndex((v) => v.id === b.dataset.id);
+    play(b.dataset.id, b.dataset.title, { queue: state.related, index: idx });
+  });
+
+  $("ytMore").addEventListener("click", loadMore);
+  $("ytNext").addEventListener("click", () => {
+    const n = nextUp();
+    if (n) playNext();
+  });
+
+  const chk = $("ytAutoplay");
+  try { state.autoplay = localStorage.getItem("anilector.ytAutoplay") !== "0"; } catch (_) {}
+  chk.checked = state.autoplay;
+  chk.addEventListener("change", () => {
+    state.autoplay = chk.checked;
+    try { localStorage.setItem("anilector.ytAutoplay", chk.checked ? "1" : "0"); } catch (_) {}
+  });
+
   $("ytClose").addEventListener("click", () => {
-    $("ytFrame").src = "about:blank";
+    try { player?.stopVideo?.(); } catch (_) {}
+    resetPlayerHost();          // sin esto quedaba un reproductor muerto
     $("ytPlayer").classList.add("hidden");
+    $("ytRelated").innerHTML = "";
+    state.current = null;
+    state.related = [];
+    markPlaying();
   });
 }

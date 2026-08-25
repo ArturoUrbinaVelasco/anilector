@@ -178,15 +178,27 @@
       <div class="tv-player-bar">
         <span id="ytNow" class="tv-now">—</span>
         <div class="tv-player-actions">
+          <label class="yt-auto" title="Reproducir el siguiente al terminar">
+            <input id="ytAutoplay" type="checkbox" checked />
+            <span data-i18n="yt.autoplay">Encadenar</span>
+          </label>
+          <button id="ytNext" class="btn btn-ghost btn-mini" title="Siguiente">⏭</button>
           <a id="ytExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en YouTube">↗</a>
           <button id="ytClose" class="btn btn-ghost btn-mini" title="Cerrar">✕</button>
         </div>
       </div>
-      <div class="tv-video-wrap">
-        <iframe id="ytFrame" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      <div class="yt-stage">
+        <div class="tv-video-wrap">
+          <div id="ytFrame"></div>
+        </div>
+        <aside id="ytRelated" class="yt-related"></aside>
       </div>
     </div>
+    <div id="ytListHead" class="yt-list-head hidden"></div>
     <div id="ytGrid" class="cards-grid"></div>
+    <div id="ytMoreWrap" class="load-more-wrap hidden">
+      <button id="ytMore" class="btn btn-ghost" data-i18n="yt.more">Ver más resultados</button>
+    </div>
   </main>
 
   <!-- ======= VISTA: SITIOS (navegador integrado) ======= -->
@@ -202,6 +214,7 @@
       <div class="tv-player-bar">
         <span id="webTitle" class="tv-now">—</span>
         <div class="tv-player-actions">
+          <button id="webFav" class="btn btn-ghost btn-mini site-fav" title="Guardar en favoritos">☆</button>
           <a id="webExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
           <button id="webClose" class="btn btn-ghost btn-mini" title="Cerrar">✕</button>
         </div>
@@ -253,18 +266,18 @@
     <div class="reader-sources">
       <div class="source-card">
         <h3 data-i18n="reader.localTitle">📂 Desde tu equipo</h3>
-        <p data-i18n="reader.localText">PDF, EPUB, CBZ/ZIP (manga), imágenes o texto.</p>
+        <p data-i18n="reader.localText">PDF, EPUB, MOBI/AZW3, comprimidos (ZIP, RAR, 7z, CBZ, CBR), imágenes o texto.</p>
         <label class="btn btn-primary file-label">
-          <input id="fileInput" type="file" multiple accept=".pdf,.epub,.cbz,.zip,.txt,.md,image/*" hidden />
+          <input id="fileInput" type="file" multiple accept=".pdf,.epub,.mobi,.azw,.azw3,.prc,.cbz,.zip,.cbr,.rar,.cb7,.7z,.cbt,.tar,.gz,.tgz,.bz2,.xz,.zst,.txt,.md,.markdown,.log,.nfo,.csv,.tsv,.json,.xml,.srt,.vtt,.ass,image/*" hidden />
           <span data-i18n="reader.chooseFile">Elegir archivos</span>
         </label>
         <div id="recentFiles" class="recent-files"></div>
       </div>
       <div class="source-card">
         <h3 data-i18n="reader.urlTitle">🌐 Desde un enlace</h3>
-        <p data-i18n="reader.urlText">Pega la URL de un PDF o página para verla aquí mismo.</p>
+        <p data-i18n="reader.urlText">Pega la URL de un archivo (PDF, CBZ, EPUB…) o de una página.</p>
         <form id="urlForm" class="url-form">
-          <input id="urlInput" type="url" placeholder="https://…/documento.pdf" required />
+          <input id="urlInput" type="url" placeholder="https://…/manga.cbz" required />
           <button class="btn btn-primary" type="submit" data-i18n="reader.open">Abrir</button>
         </form>
       </div>

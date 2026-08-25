@@ -41,6 +41,9 @@ const MIME = {
   ".jpg": "image/jpeg",
   ".ico": "image/x-icon",
   ".webmanifest": "application/manifest+json",
+  // Obligatorio: sin este tipo exacto el navegador rechaza el WebAssembly
+  // de libarchive (comprimidos RAR/7z) al compilarlo en streaming.
+  ".wasm": "application/wasm",
 };
 
 const UA =
@@ -92,6 +95,57 @@ async function handleHls(req, res, target) {
   } finally { clearTimeout(timer); }
 }
 
+/* ---------- proxy de archivos (visor) ----------
+   Igual que /api/file del microservicio, pero SIN el tope de 4.5 MB de
+   Vercel: aquí los bytes se reenvían por streaming desde tu propia
+   conexión, así que sirve para CBZ/PDF pesados. */
+async function handleFile(req, res, target) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
+  if (!target || !/^https?:\/\//i.test(target)) {
+    res.writeHead(400); return res.end("url inválida");
+  }
+  let ref = "";
+  try {
+    const u = new URL(target);
+    // No dejar que sirva de puente a la red local del equipo.
+    if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/i.test(u.hostname)) {
+      res.writeHead(403); return res.end("destino no permitido");
+    }
+    ref = `${u.protocol}//${u.host}/`;
+  } catch (_) {}
+  try {
+    const up = await fetch(target, {
+      redirect: "follow",
+      headers: {
+        "User-Agent": UA, Accept: "*/*",
+        ...(req.headers.range ? { Range: req.headers.range } : {}),
+        ...(ref ? { Referer: ref } : {}),
+      },
+    });
+    if (!up.ok && up.status !== 206) { res.writeHead(502); return res.end(`upstream ${up.status}`); }
+    const head = { "Content-Type": up.headers.get("content-type") || "application/octet-stream" };
+    for (const h of ["content-length", "content-range", "accept-ranges"]) {
+      const v = up.headers.get(h);
+      if (v) head[h] = v;
+    }
+    res.writeHead(up.status, head);
+    // Streaming: nunca se carga el archivo entero en memoria.
+    const reader = up.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!res.write(Buffer.from(value))) {
+        await new Promise((r) => res.once("drain", r));
+      }
+    }
+    res.end();
+  } catch (e) {
+    if (!res.headersSent) res.writeHead(502);
+    res.end("No se pudo descargar: " + (e.message || e));
+  }
+}
+
 /* ---------- estáticos ---------- */
 async function serveStatic(req, res) {
   let p = decodeURIComponent(new URL(req.url, "http://x").pathname);
@@ -110,6 +164,7 @@ async function serveStatic(req, res) {
 http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   if (u.pathname === "/api/hls") return handleHls(req, res, u.searchParams.get("url"));
+  if (u.pathname === "/api/file") return handleFile(req, res, u.searchParams.get("url"));
   if (u.pathname === "/api/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ ok: true, service: "anilector-local" }));

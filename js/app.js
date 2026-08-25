@@ -735,12 +735,16 @@ function bindEvents() {
 
   // visor
   $("fileInput").addEventListener("change", async (e) => {
-    try {
-      const names = Array.from(e.target.files).map((f) => f.name);
-      await openLocalFiles(e.target.files);
-      names.forEach(pushRecent);
-    } catch (err) { toast(err.message); }
+    // Copiar la lista y limpiar el input ANTES de abrir: si el visor se
+    // queda esperando (p. ej. pidiendo contraseña), el input seguiría con
+    // el archivo puesto y volver a elegir el MISMO no dispararía nada.
+    const files = Array.from(e.target.files);
     e.target.value = "";
+    if (!files.length) return;
+    try {
+      await openLocalFiles(files);
+      files.forEach((f) => pushRecent(f.name));
+    } catch (err) { toast(err.message); }
   });
   $("urlForm").addEventListener("submit", (e) => {
     e.preventDefault();
