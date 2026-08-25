@@ -15,14 +15,32 @@ const GBOOKS = "https://www.googleapis.com/books/v1";
 /* ---------- Proveedor de anime/manga con respaldo automático ----------
    Primario: Jikan (MyAnimeList). Si falla (caída/504), se cambia
    automáticamente a AniList por el resto de la sesión. */
-let animeProvider = "jikan";
+/* Si Jikan estuvo caído hace poco se arranca directo con AniList: así no
+   se gastan dos peticiones (y su espera) en CADA carga de página mientras
+   MyAnimeList está de capa caída. */
+const DOWN_KEY = "anilector.jikanDown";
+const DOWN_MINUTES = 15;
+function jikanRecentlyDown() {
+  try { return Date.now() < Number(localStorage.getItem(DOWN_KEY) || 0); }
+  catch { return false; }
+}
+function markJikanDown() {
+  try { localStorage.setItem(DOWN_KEY, String(Date.now() + DOWN_MINUTES * 60000)); } catch (_) {}
+}
+function clearJikanDown() {
+  try { localStorage.removeItem(DOWN_KEY); } catch (_) {}
+}
+
+let animeProvider = jikanRecentlyDown() ? "anilist" : "jikan";
 let providerChangeCb = null;
 export function onProviderChange(cb) { providerChangeCb = cb; }
 export function getProvider() { return animeProvider; }
-function switchToAniList() {
+// `quiet` evita el aviso cuando ya sabíamos que Jikan estaba caído.
+function switchToAniList({ quiet = false } = {}) {
+  markJikanDown();
   if (animeProvider !== "anilist") {
     animeProvider = "anilist";
-    try { providerChangeCb?.(); } catch (_) {}
+    if (!quiet) { try { providerChangeCb?.(); } catch (_) {} }
   }
 }
 
@@ -314,6 +332,7 @@ async function searchJikan({ cat, q, genre, year, order, status, page }) {
   }
 
   const data = await jikanFetch(`/${cat}?${params}`);
+  clearJikanDown();   // volvió a responder: se olvida la marca
   return {
     items: (data.data || []).map((x) => normJikan(x, cat)),
     hasMore: !!data.pagination?.has_next_page,

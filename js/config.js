@@ -41,6 +41,36 @@ export const MANGA_SITES = [
 ];
 
 /* ------------------------------------------------------------
+   Sitios que NO se dejan ver dentro de la app.
+   Mandan cabeceras (X-Frame-Options / CSP frame-ancestors) que le
+   prohíben al navegador mostrarlos dentro de otra página, y no existe
+   forma de saltárselo ni evento fiable para detectarlo: el marco
+   simplemente se queda en blanco.
+   Al estar aquí, la app avisa ANTES con un botón para abrirlos en una
+   pestaña, en lugar de dejarte mirando un recuadro vacío.
+   Se compara por dominio (incluye subdominios). Si algún sitio cambia
+   de política, basta con quitarlo de esta lista.
+   ------------------------------------------------------------ */
+export const NO_EMBED_SITES = [
+  "mangadex.org",
+  "webtoons.com",
+  "crunchyroll.com",
+  "netflix.com",
+  "viz.com",
+  "kobo.com",
+  "play.google.com",
+  "comixology.com",
+  "amazon.com",
+  "mangaplus.shueisha.co.jp",
+  "hianime.to",
+  "animeonegai.com",
+  "disneyplus.com",
+  "primevideo.com",
+  "max.com",
+  "hidive.com",
+];
+
+/* ------------------------------------------------------------
    Microservicio que encuentra el ENLACE EXACTO del anime/episodio
    (los proveedores marcados arriba con "provider"). Sin él, la app
    abre la búsqueda del sitio como respaldo. Guía en anilector-api/README.

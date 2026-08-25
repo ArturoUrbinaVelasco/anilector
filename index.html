@@ -226,6 +226,16 @@
 
   <!-- ======= VISTA: RESULTADOS ======= -->
   <main id="viewSearch" class="view hidden">
+    <!-- Selector de categoría (visible en móvil, donde la barra inferior
+         agrupa las tres en «Buscar»). -->
+    <div id="catChips" class="cat-chips">
+      <div class="cat-chips-scroll">
+        <button class="chip" data-catchip="anime">🎞️ <span data-i18n="nav.anime">Anime</span></button>
+        <button class="chip" data-catchip="manga">📖 <span data-i18n="nav.manga">Manga</span></button>
+        <button class="chip" data-catchip="books">📚 <span data-i18n="nav.books">Libros</span></button>
+      </div>
+      <button class="chip chip-filters" id="toggleFiltersM" title="Filtros">⚙️</button>
+    </div>
     <div id="resultsInfo" class="results-info"></div>
     <div id="resultsGrid" class="cards-grid"></div>
     <div id="loadMoreWrap" class="load-more hidden">
@@ -310,6 +320,46 @@
         </div>
       </div>
       <div id="viewerBody" class="viewer-body"></div>
+    </div>
+  </div>
+
+  <!-- ======= NAVEGACIÓN INFERIOR (solo móvil) =======
+       En un teléfono las pestañas de arriba quedan lejos del pulgar y se
+       salen de la pantalla. Esta barra fija deja las secciones principales
+       a mano; Anime/Manga/Libros se agrupan en «Buscar» (dentro de esa
+       vista se eligen con chips) y las secundarias van en «Más». -->
+  <nav id="mobileNav" class="mobile-nav" aria-label="Secciones">
+    <button class="mnav-btn" data-mview="tv"><span class="mnav-ico">📺</span><span data-i18n="mnav.tv">TV</span></button>
+    <button class="mnav-btn" data-mview="yt"><span class="mnav-ico">▶️</span><span data-i18n="mnav.yt">YouTube</span></button>
+    <button class="mnav-btn" data-mview="search"><span class="mnav-ico">🔎</span><span data-i18n="mnav.search">Buscar</span></button>
+    <button class="mnav-btn" data-mview="library"><span class="mnav-ico">⭐</span><span data-i18n="mnav.library">Biblioteca</span></button>
+    <button class="mnav-btn" id="moreBtn"><span class="mnav-ico">☰</span><span data-i18n="mnav.more">Más</span></button>
+  </nav>
+
+  <!-- Hoja de «Más»: secciones secundarias y ajustes -->
+  <div id="moreSheet" class="more-sheet hidden">
+    <div class="more-card">
+      <div class="more-grab"></div>
+      <button class="more-item" data-mview="web"><span>🌐</span><span data-i18n="nav.web">Sitios</span></button>
+      <button class="more-item" data-mview="reader"><span>👓</span><span data-i18n="nav.reader">Visor</span></button>
+      <div class="more-sep"></div>
+      <div class="more-row">
+        <label data-i18n="more.lang">Idioma</label>
+        <select id="langSelectM" class="select-mini">
+          <option value="es">🇲🇽 ES</option>
+          <option value="en">🇺🇸 EN</option>
+        </select>
+      </div>
+      <div class="more-row">
+        <label data-i18n="more.theme">Tema</label>
+        <select id="themeSelectM" class="select-mini">
+          <option value="dark" data-i18n="theme.dark">🌙 Oscuro</option>
+          <option value="light" data-i18n="theme.light">☀️ Claro</option>
+          <option value="midnight" data-i18n="theme.midnight">🌌 Medianoche</option>
+          <option value="sakura" data-i18n="theme.sakura">🌸 Sakura</option>
+          <option value="ocean" data-i18n="theme.ocean">🌊 Océano</option>
+        </select>
+      </div>
     </div>
   </div>
 

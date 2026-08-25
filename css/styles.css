@@ -567,6 +567,14 @@ body {
 .site-edit:hover { color: var(--accent); }
 .site-del:hover { color: var(--danger, #e03131); }
 .site-fav.faved { color: #ffd43b; }
+.web-blocked { color: var(--text-dim); font-weight: 600; }
+.auth-chip.has-pending::after {
+  content: ""; position: absolute; top: 0; right: 0;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--bg-alt);
+}
+.auth-chip { position: relative; }
+.auth-pending { font-size: 0.76rem; color: var(--text-dim); padding: 0.2rem 0.5rem 0.4rem; }
 
 /* ---------- Libros MOBI/AZW3 y Markdown ---------- */
 .viewer-body .ebook-doc {
@@ -901,19 +909,178 @@ body {
 }
 
 /* ---------- Responsive ---------- */
+/* ============================================================
+   MÓVIL — barra inferior, chips de categoría y hoja «Más»
+   En escritorio todo esto queda oculto: la navegación sigue siendo
+   la fila de pestañas de arriba.
+   ============================================================ */
+.mobile-nav, .more-sheet, .cat-chips { display: none; }
+
 @media (max-width: 720px) {
-  .app-header { padding: 0.6rem 0.7rem; }
+  /* ---- Encabezado compacto: idioma y tema se van a «Más», así se
+     recupera una fila entera de pantalla ---- */
+  /* (.topbar ya es sticky; aquí solo se compacta) */
+  .app-header { padding: 0.5rem 0.7rem; gap: 0.5rem; }
   .brand-name { display: none; }
-  .search-bar { order: 3; flex-basis: 100%; }
-  .search-bar .btn-ghost span { display: none; }
+  .app-header .select-mini { display: none; }
+  .search-bar { order: 3; flex-basis: 100%; gap: 0.4rem; }
+  .search-bar .btn-ghost { display: none; }   /* «Filtros» vive en la vista de búsqueda */
   .auth-btn-text { display: none; }
-  .cards-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.7rem; }
-  .detail-cover { width: 140px; }
-  .view { padding: 0.7rem; }
+  .header-actions { margin-left: auto; }
+
+  /* ---- Pestañas de arriba: se sustituyen por la barra inferior ---- */
+  .main-nav { display: none; }
+
+  /* ---- Barra inferior fija, al alcance del pulgar ---- */
+  .mobile-nav {
+    display: flex;
+    /* Por encima de la hoja «Más»: si el fondo de la hoja la tapara,
+       la barra dejaría de responder mientras está abierta. */
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 80;
+    background: var(--bg-alt);
+    border-top: 1px solid var(--border);
+    padding: 0.25rem 0.2rem calc(0.25rem + env(safe-area-inset-bottom));
+  }
+  .mnav-btn {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-dim); font: inherit; font-size: 0.66rem; font-weight: 600;
+    padding: 0.35rem 0.1rem; border-radius: 10px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mnav-btn span:not(.mnav-ico) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .mnav-ico { font-size: 1.15rem; line-height: 1.1; }
+  .mnav-btn.active { color: var(--accent); }
+  .mnav-btn.active .mnav-ico { transform: translateY(-1px); }
+
+  /* Espacio para que la barra no tape el final del contenido */
+  .view { padding: 0.7rem 0.7rem calc(4.6rem + env(safe-area-inset-bottom)); }
+  .app-footer { padding-bottom: calc(4.2rem + env(safe-area-inset-bottom)); }
+
+  /* ---- Hoja «Más» ---- */
+  .more-sheet {
+    display: block; position: fixed; inset: 0; z-index: 70;
+    background: rgba(8, 8, 16, 0.55);
+  }
+  .more-sheet.hidden { display: none; }
+  .more-card {
+    /* Apoyada justo encima de la barra inferior, no debajo de ella. */
+    position: absolute; left: 0; right: 0;
+    bottom: calc(3.6rem + env(safe-area-inset-bottom));
+    background: var(--bg-alt);
+    border-radius: 18px 18px 0 0;
+    border-top: 1px solid var(--border);
+    padding: 0.5rem 1rem 0.8rem;
+    display: flex; flex-direction: column; gap: 0.15rem;
+    box-shadow: 0 -8px 24px rgba(0,0,0,0.35);
+  }
+  .more-grab { width: 40px; height: 4px; border-radius: 2px; background: var(--border); margin: 0.2rem auto 0.6rem; }
+  .more-item {
+    display: flex; align-items: center; gap: 0.8rem;
+    background: none; border: none; color: var(--text); font: inherit; font-size: 0.95rem;
+    padding: 0.85rem 0.4rem; border-radius: 12px; cursor: pointer; text-align: left;
+  }
+  .more-item:active { background: var(--bg-soft); }
+  .more-sep { height: 1px; background: var(--border); margin: 0.5rem 0; }
+  .more-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.4rem; }
+  .more-row label { font-size: 0.85rem; color: var(--text-dim); font-weight: 600; }
+  .more-row .select-mini { display: block; }
+
+  /* ---- Chips de categoría dentro de Buscar.
+     Solo se desliza la fila de categorías; el botón de filtros queda
+     anclado a la derecha (si iba dentro del scroll se salía de pantalla). ---- */
+  .cat-chips {
+    display: flex; gap: 0.4rem; align-items: center;
+    padding-bottom: 0.6rem; margin-bottom: 0.2rem;
+  }
+  .cat-chips-scroll {
+    display: flex; gap: 0.4rem; flex: 1; min-width: 0;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .cat-chips-scroll::-webkit-scrollbar { display: none; }
+  .cat-chips .chip { white-space: nowrap; }
+  .chip-filters { flex: none; padding: 0.45rem 0.75rem; }
+
+  /* ---- Filtros como hoja inferior (antes empujaban el contenido y
+     dejaban las pestañas flotando a media pantalla) ---- */
+  .filters-panel {
+    position: fixed; left: 0; right: 0;
+    bottom: calc(3.6rem + env(safe-area-inset-bottom));
+    z-index: 55;
+    border-top: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 24px rgba(0,0,0,0.35);
+    max-height: 60vh; overflow-y: auto;
+  }
+  .filters-panel .filter-group { flex: 1 1 45%; }
+
+  /* ---- Tarjetas: antes solo cabían 2 en pantalla ---- */
+  .cards-grid { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+  .card { border-radius: 12px; }
+  .card-body { padding: 0.5rem 0.6rem 0.6rem; gap: 0.2rem; }
+  .card-title { font-size: 0.82rem; line-height: 1.25; }
+  .card-meta { font-size: 0.7rem; gap: 0.4rem; }
+  .card-counts { font-size: 0.7rem; }
+  .card-badge, .card-score { font-size: 0.65rem; padding: 0.1rem 0.4rem; }
+  .card-fav { width: 30px; height: 30px; font-size: 0.95rem; }
+
+  /* ---- TV: reproductor fijo y, justo debajo, el buscador de canal.
+     Las alturas se miden en JS (--topbar-h, --tv-stage-h) porque el
+     encabezado crece o encoge según el idioma y el tamaño de pantalla:
+     con valores fijos el reproductor acababa solapando la lista. ---- */
+  .tv-stage {
+    position: sticky; top: var(--topbar-h, 96px); z-index: 20;
+    background: var(--bg); padding-bottom: 0.4rem;
+    margin: 0 -0.7rem; padding-left: 0.7rem; padding-right: 0.7rem;
+  }
+  .tv-filters {
+    position: sticky; z-index: 19;
+    top: calc(var(--topbar-h, 96px) + var(--tv-stage-h, 240px));
+    background: var(--bg); margin: 0 -0.7rem 0.6rem;
+    padding: 0.5rem 0.7rem; gap: 0.4rem;
+    box-shadow: 0 4px 8px -4px rgba(0,0,0,0.5);
+  }
+  .tv-search { flex: 1 1 100%; min-width: 0; }
+  .tv-filters .select-mini, .tv-filters select { flex: 1 1 100%; }
+  /* Canales más compactos: se ven ~10 por pantalla en vez de 6 */
+  .tv-row { padding: 0.4rem 0.5rem; gap: 0.5rem; border-radius: 10px; }
+  .tv-logo { width: 32px; height: 32px; }
+  .tv-name { font-size: 0.8rem; }
+  .tv-group { font-size: 0.65rem; }
+  .tv-lists { gap: 0.35rem; }
+  .tv-lists .chip { font-size: 0.75rem; padding: 0.35rem 0.7rem; }
+  .view-title { font-size: 1.15rem; margin-bottom: 0.5rem; }
+  .tv-note { font-size: 0.78rem; margin-bottom: 0.7rem; }
+
+  /* ---- Ficha a pantalla completa, con cerrar a mano ---- */
+  .modal { padding: 0; align-items: stretch; }
+  .modal-card {
+    border-radius: 0; max-height: 100vh; max-height: 100dvh;
+    height: 100%; max-width: none;
+  }
+  .detail-card { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+  .modal-close {
+    position: sticky; top: 0.5rem; margin-left: auto;
+    z-index: 5; width: 40px; height: 40px;
+  }
+  .detail-hero { flex-direction: column; align-items: center; text-align: center; }
+  .detail-cover { width: 42vw; max-width: 190px; }
+  .detail-actions { gap: 0.4rem; }
+  .watch-links { gap: 0.35rem; }
+  .watch-links .btn, .watch-official .btn { font-size: 0.8rem; padding: 0.45rem 0.7rem; }
+
+  /* ---- Visor a pantalla completa ---- */
   .viewer-toolbar { gap: 0.3rem; }
   .page-info { min-width: 52px; font-size: 0.75rem; }
+
+  /* Botones y filas: objetivo táctil cómodo */
+  .btn { min-height: 40px; }
+  .btn-mini { min-height: 32px; }
 }
-@media (max-width: 420px) {
-  .cards-grid { grid-template-columns: repeat(2, 1fr); }
-  .header-actions { margin-left: 0; }
+
+@media (max-width: 380px) {
+  .mnav-btn { font-size: 0.6rem; }
+  .cards-grid { gap: 0.5rem; }
 }

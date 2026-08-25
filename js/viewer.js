@@ -8,7 +8,7 @@
    (import dinámico): no afectan el arranque de la app.
    ============================================================ */
 import { t } from "./i18n.js";
-import { BACKEND_URL } from "./config.js";
+import { BACKEND_URL, NO_EMBED_SITES } from "./config.js";
 
 const modal = () => document.getElementById("viewerModal");
 const body = () => document.getElementById("viewerBody");
@@ -643,8 +643,32 @@ export async function openText(file, title) {
   body().appendChild(div);
 }
 
+/* ¿Este sitio prohíbe mostrarse dentro de otra página? */
+export function blocksEmbedding(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    return (NO_EMBED_SITES || []).some((d) => host === d || host.endsWith(`.${d}`));
+  } catch (_) { return false; }
+}
+
+/* Aviso para los sitios que no se dejan embeber: mejor decirlo de frente
+   que enseñar un recuadro en blanco que nunca va a cargar. */
+function showNoEmbed(url, title) {
+  let host = url;
+  try { host = new URL(url).hostname.replace(/^www\./, ""); } catch (_) {}
+  openModal(title || host, { showControls: false, external: url });
+  state.mode = "text";
+  body().innerHTML = `
+    <div class="iframe-fallback share-help">
+      <p class="share-title">🚫 ${t("reader.noEmbedTitle")}</p>
+      <p>${t("reader.noEmbedBody").replace("%s", esc(host))}</p>
+      <a class="btn btn-primary" href="${esc(url)}" target="_blank" rel="noopener">${t("reader.openTab")}</a>
+    </div>`;
+}
+
 /* ---------- Iframe (páginas / lectores externos) ---------- */
-export function openIframe(url, title, { hint = true } = {}) {
+export function openIframe(url, title, { hint = true, force = false } = {}) {
+  if (!force && blocksEmbedding(url)) return showNoEmbed(url, title);
   openModal(title || url, { showControls: false, external: url });
   state.mode = "iframe";
   const wrap = document.createElement("div");

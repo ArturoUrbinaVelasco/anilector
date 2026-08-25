@@ -8,7 +8,16 @@
    en todos los equipos donde inicies sesión.
    ============================================================ */
 import { t } from "./i18n.js";
-import { WEB_APPS } from "./config.js";
+import { WEB_APPS, NO_EMBED_SITES } from "./config.js";
+
+/* Sitios que prohíben mostrarse dentro de otra página: en vez de dejar
+   un marco en blanco se avisa y se ofrece abrirlo en una pestaña. */
+function blocksEmbedding(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    return (NO_EMBED_SITES || []).some((d) => host === d || host.endsWith(`.${d}`));
+  } catch (_) { return false; }
+}
 
 const $ = (id) => document.getElementById(id);
 function esc(s) {
@@ -79,11 +88,19 @@ function open(url, title) {
   $("webFrameWrap").classList.remove("hidden");
   $("webTitle").textContent = title || u;
   $("webExternal").href = u;
-  $("webFrame").src = u;
   syncFavButton();
-  // Muchos sitios bloquean iframes sin evento fiable → aviso permanente.
-  $("webHint").innerHTML =
-    `${t("web.hint")} <a class="btn btn-primary btn-mini" href="${esc(u)}" target="_blank" rel="noopener">${t("web.openTab")}</a>`;
+
+  const frame = $("webFrame");
+  const blocked = blocksEmbedding(u);
+  // Los sitios de la lista ni se intentan: se sabe que devolverían un
+  // recuadro vacío. Para el resto, aviso permanente por si acaso (no hay
+  // evento fiable que avise de un iframe rechazado).
+  frame.style.display = blocked ? "none" : "";
+  frame.src = blocked ? "about:blank" : u;
+  $("webHint").innerHTML = blocked
+    ? `<span class="web-blocked">🚫 ${t("web.blocked")}</span>
+       <a class="btn btn-primary btn-mini" href="${esc(u)}" target="_blank" rel="noopener">${t("web.openTab")}</a>`
+    : `${t("web.hint")} <a class="btn btn-primary btn-mini" href="${esc(u)}" target="_blank" rel="noopener">${t("web.openTab")}</a>`;
   $("webFrameWrap").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 

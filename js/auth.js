@@ -191,6 +191,9 @@ function merge(remote, local) {
 async function syncNow({ toastOk = false } = {}) {
   if (!user) return;
   await getToken(true).catch(() => getToken(false));
+  // Con token válido ya se puede confirmar quién es (al arrancar solo
+  // teníamos el perfil en caché).
+  if (!user.email) await fetchProfile().catch(() => {});
   await findFile();
   const merged = merge(await download(), collectLocal());
   applyMerged(merged);
@@ -199,17 +202,30 @@ async function syncNow({ toastOk = false } = {}) {
   if (toastOk) showToast(t("auth.synced"));
 }
 
+/* Subida automática en segundo plano. Solo se hace si YA hay un token
+   válido de esta sesión: pedir uno aquí abriría una ventana emergente sin
+   gesto del usuario y el navegador la bloquearía. Si no lo hay, se marca
+   como pendiente y el avatar avisa para que el usuario toque «Sincronizar». */
+let pending = false;
 function scheduleUpload() {
   if (!user) return;
+  if (!hasToken()) { pending = true; render(); return; }
   clearTimeout(uploadTimer);
   uploadTimer = setTimeout(async () => {
     try {
       await getToken(true);
       if (!fileId) await findFile();
       await upload(collectLocal());
-    } catch (e) { console.warn("Sync:", e.message); }
+      pending = false;
+      render();
+    } catch (e) {
+      pending = true;
+      render();
+      console.warn("Sync:", e.message);
+    }
   }, 2500);
 }
+function hasToken() { return !!accessToken && Date.now() < tokenExp - 60000; }
 
 function showToast(msg) {
   const el = document.getElementById("toast");
@@ -236,9 +252,10 @@ function render() {
       ? `<img class="auth-avatar" src="${user.picture}" alt="" referrerpolicy="no-referrer" />`
       : `<span class="auth-avatar auth-avatar-fallback">${(user.name || "?").charAt(0)}</span>`;
     el.innerHTML = `
-      <button id="gChip" class="auth-chip" title="${user.email || ""}">${pic}</button>
+      <button id="gChip" class="auth-chip${pending ? " has-pending" : ""}" title="${pending ? t("auth.pending") : (user.email || "")}">${pic}</button>
       <div id="gMenu" class="auth-menu hidden">
         <div class="auth-menu-user"><b>${user.name || ""}</b><small>${user.email || ""}</small></div>
+        ${pending ? `<div class="auth-pending">☁️ ${t("auth.pending")}</div>` : ""}
         <button id="gSync" class="btn btn-ghost">☁️ ${t("auth.sync")}</button>
         <button id="gOut" class="btn btn-ghost">🚪 ${t("auth.signOut")}</button>
       </div>`;
@@ -248,7 +265,11 @@ function render() {
     });
     document.getElementById("gSync").addEventListener("click", () => {
       document.getElementById("gMenu").classList.add("hidden");
-      syncNow({ toastOk: true }).catch(() => showToast(t("auth.syncError")));
+      // Este SÍ es un gesto del usuario: aquí la ventana de Google
+      // se puede abrir sin que el navegador la bloquee.
+      syncNow({ toastOk: true })
+        .then(() => { pending = false; render(); })
+        .catch(() => showToast(t("auth.syncError")));
     });
     document.getElementById("gOut").addEventListener("click", signOut);
     document.addEventListener("click", () =>
@@ -279,19 +300,21 @@ function signOut() {
   showToast(t("auth.bye"));
 }
 
-/* ---------- arranque ---------- */
+/* ---------- arranque ----------
+   OJO: NO se pide el token aquí. `requestAccessToken` SIEMPRE abre una
+   ventana emergente, y una que no nace de un gesto del usuario la bloquea
+   el navegador; además la librería de Google consulta `window.closed` de
+   esa ventana, que es justo lo que provocaba los avisos de
+   Cross-Origin-Opener-Policy en la consola al cargar la página.
+   Se restaura la sesión desde la caché (avatar y nombre) y el token se
+   pide solo cuando el usuario toca algo: sincronizar o iniciar sesión. */
 export function initAuth(refreshCb) {
   onDataRefresh = refreshCb;
   if (!GOOGLE_CLIENT_ID) { const el = area(); if (el) el.innerHTML = ""; return; }
-  render();
-  window.addEventListener("anilector:datachanged", scheduleUpload);
-  // Reanudar sesión previa sin molestar al usuario
   if (localStorage.getItem("anilector.gsignin") === "1") {
     const cached = readKey("anilector.guser");
-    if (cached) { user = cached; render(); }
-    getToken(true)
-      .then(fetchProfile)
-      .then(() => { render(); return syncNow(); })
-      .catch(() => { user = null; render(); });
+    if (cached) user = cached;
   }
+  render();
+  window.addEventListener("anilector:datachanged", scheduleUpload);
 }

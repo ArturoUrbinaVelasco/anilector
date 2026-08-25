@@ -194,6 +194,15 @@ function showView(view) {
       (view !== "search" && b.dataset.view === view);
     b.classList.toggle("active", active);
   });
+  // Barra inferior: «Buscar» cubre anime/manga/libros; Sitios y Visor
+  // viven en «Más», así que ahí se marca ese botón.
+  document.querySelectorAll(".mnav-btn").forEach((b) => {
+    const mv = b.dataset.mview;
+    const active = mv ? mv === view : (view === "web" || view === "reader");
+    b.classList.toggle("active", active);
+  });
+  document.querySelectorAll("[data-catchip]").forEach((c) =>
+    c.classList.toggle("active", c.dataset.catchip === S.cat));
   if (view === "library") renderLibrary();
   if (view === "tv") ensureTvLoaded();
   else pauseTv(); // no reproducir en segundo plano
@@ -668,19 +677,46 @@ function bindEvents() {
   ["genreSelect", "yearSelect", "orderSelect", "statusSelect"].forEach((id) =>
     $(id).addEventListener("change", () => { if (S.view === "search") runSearch(); }));
 
+  // Cambiar de categoría (anime/manga/libros) desde donde sea.
+  async function gotoCat(cat) {
+    const changed = S.cat !== cat;
+    S.cat = cat;
+    showView("search");
+    // Sin await: loadGenres ya resetea el selector de inmediato y la
+    // búsqueda no debe esperar a los géneros (con Jikan lento dejaba
+    // los resultados de la categoría anterior en pantalla).
+    if (changed) loadGenres();
+    if (changed || !S.items.length) runSearch();
+  }
+
   document.querySelectorAll(".nav-tab").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (b.dataset.view === "search") {
-        const changed = S.cat !== b.dataset.cat;
-        S.cat = b.dataset.cat;
-        showView("search");
-        // Sin await: loadGenres ya resetea el selector de inmediato y la
-        // búsqueda no debe esperar a los géneros (con Jikan lento dejaba
-        // los resultados de la categoría anterior en pantalla).
-        if (changed) loadGenres();
-        if (changed || !S.items.length) runSearch();
-      } else showView(b.dataset.view);
+    b.addEventListener("click", () => {
+      if (b.dataset.view === "search") gotoCat(b.dataset.cat);
+      else showView(b.dataset.view);
     }));
+
+  /* ---------- navegación móvil (barra inferior + hoja «Más») ---------- */
+  document.querySelectorAll(".mnav-btn[data-mview]").forEach((b) =>
+    b.addEventListener("click", () => {
+      closeMore();
+      if (b.dataset.mview === "search") gotoCat(S.cat);
+      else showView(b.dataset.mview);
+    }));
+
+  const sheet = $("moreSheet");
+  const openMore = () => sheet.classList.remove("hidden");
+  function closeMore() { sheet.classList.add("hidden"); }
+  $("moreBtn").addEventListener("click", () =>
+    sheet.classList.contains("hidden") ? openMore() : closeMore());
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) closeMore(); });
+  sheet.querySelectorAll(".more-item[data-mview]").forEach((b) =>
+    b.addEventListener("click", () => { closeMore(); showView(b.dataset.mview); }));
+
+  // Chips de categoría dentro de Buscar
+  document.querySelectorAll("[data-catchip]").forEach((b) =>
+    b.addEventListener("click", () => gotoCat(b.dataset.catchip)));
+  $("toggleFiltersM")?.addEventListener("click", () =>
+    $("filtersPanel").classList.toggle("hidden"));
 
   document.querySelectorAll(".chip[data-libfilter]").forEach((chip) =>
     chip.addEventListener("click", () => {
@@ -752,20 +788,40 @@ function bindEvents() {
     if (url) { openUrl(url); pushRecent(url); }
   });
 
-  // idioma y tema
-  $("langSelect").addEventListener("change", (e) => {
-    setLang(e.target.value);
+  // idioma y tema (los selectores del encabezado y los de la hoja «Más»
+  // son el mismo ajuste: se mantienen sincronizados)
+  const applyLang = (v) => {
+    setLang(v);
+    $("langSelect").value = v;
+    $("langSelectM").value = v;
     loadYears();
     loadGenres();
     if (S.view === "library") renderLibrary();
     renderRecent();
-  });
-  $("themeSelect").addEventListener("change", (e) => {
-    document.documentElement.dataset.theme = e.target.value;
-    localStorage.setItem("anilector.theme", e.target.value);
-  });
+  };
+  const applyTheme = (v) => {
+    document.documentElement.dataset.theme = v;
+    localStorage.setItem("anilector.theme", v);
+    $("themeSelect").value = v;
+    $("themeSelectM").value = v;
+  };
+  $("langSelect").addEventListener("change", (e) => applyLang(e.target.value));
+  $("langSelectM").addEventListener("change", (e) => applyLang(e.target.value));
+  $("themeSelect").addEventListener("change", (e) => applyTheme(e.target.value));
+  $("themeSelectM").addEventListener("change", (e) => applyTheme(e.target.value));
 
   bindViewerControls();
+}
+
+/* Mide la barra superior y el reproductor de TV para que los elementos
+   fijos se coloquen justo debajo. Con medidas fijas en CSS se solapaban,
+   porque el encabezado cambia de alto según el idioma y el ancho. */
+function syncStickyOffsets() {
+  const root = document.documentElement;
+  const tb = document.querySelector(".topbar");
+  const st = document.querySelector(".tv-stage");
+  if (tb) root.style.setProperty("--topbar-h", `${Math.round(tb.getBoundingClientRect().height)}px`);
+  if (st) root.style.setProperty("--tv-stage-h", `${Math.round(st.getBoundingClientRect().height)}px`);
 }
 
 /* ---------- arranque ---------- */
@@ -773,9 +829,11 @@ function init() {
   const theme = localStorage.getItem("anilector.theme") || "dark";
   document.documentElement.dataset.theme = theme;
   $("themeSelect").value = theme;
+  $("themeSelectM").value = theme;
 
   const lang = getLang();
   $("langSelect").value = lang;
+  $("langSelectM").value = lang;
   setLang(lang);
 
   onProviderChange(() => {
@@ -795,6 +853,15 @@ function init() {
   initTv();
   initYouTube();
   initWebApps();
+
+  syncStickyOffsets();
+  window.addEventListener("resize", syncStickyOffsets);
+  window.addEventListener("orientationchange", syncStickyOffsets);
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(syncStickyOffsets);
+    document.querySelectorAll(".topbar, .tv-stage").forEach((el) => ro.observe(el));
+  }
+
   // Página de inicio: TV en vivo
   showView("tv");
 }
