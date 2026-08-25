@@ -2,7 +2,10 @@
    AniLector — controlador principal
    ============================================================ */
 import { t, setLang, getLang, applyTranslations } from "./i18n.js";
-import { search, getGenres, getDetail, buildOrder, onProviderChange } from "./api.js";
+import {
+  search, getGenres, getDetail, buildOrder, onProviderChange,
+  filterEsEn, mangaReadingSites,
+} from "./api.js";
 import {
   openLocalFiles, openUrl, openIframe, openGoogleBook, closeViewer, bindViewerControls,
 } from "./viewer.js";
@@ -246,14 +249,29 @@ async function openDetail(id) {
       </div>
     </div>
     <div class="detail-actions">${actions.join("")}</div>
-    ${d.streaming?.length ? `
+    ${(() => {
+      // Solo enlaces en español o inglés
+      let sites = filterEsEn(d.streaming);
+      if (d.cat === "manga") {
+        // Garantizar al menos 5 sitios de lectura (plataformas legales ES/EN)
+        const seen = new Set(sites.map((s) => { try { return new URL(s.url).hostname; } catch { return s.url; } }));
+        for (const s of mangaReadingSites(d.title)) {
+          let h; try { h = new URL(s.url).hostname; } catch { h = s.url; }
+          if (!seen.has(h)) { sites.push(s); seen.add(h); }
+        }
+      }
+      sites = sites.slice(0, d.cat === "manga" ? 8 : 10);
+      if (d.cat === "book" || !sites.length) return "";
+      const shortLang = (l) => l ? ` · ${String(l).replace(/english/i, "EN").replace(/spanish.*/i, "ES")}` : "";
+      return `
       <div class="detail-section">
         <h3>${d.cat === "anime" ? t("detail.whereWatch") : t("detail.whereRead")}</h3>
         <div class="watch-links">
-          ${d.streaming.slice(0, 10).map((s) =>
-            `<button class="btn btn-ghost" data-readurl="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">▶ ${esc(s.site)}</button>`).join("")}
+          ${sites.map((s) =>
+            `<button class="btn btn-ghost" data-readurl="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">${d.cat === "anime" ? "▶" : "📖"} ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
         </div>
-      </div>` : ""}
+      </div>`;
+    })()}
     ${d.synopsis ? `<div class="detail-section"><h3>${t("detail.synopsis")}</h3><p class="detail-synopsis">${esc(d.synopsis)}</p></div>` : ""}
     ${d.cat !== "book" ? `
       <div class="detail-section">

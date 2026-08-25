@@ -167,7 +167,7 @@ async function alFetchNode(cat, id) {
   const links = d.Media.externalLinks || [];
   n.streaming = links
     .filter((l) => l.type === "STREAMING")
-    .map((l) => ({ site: l.site + (l.language ? ` (${l.language})` : ""), url: l.url }));
+    .map((l) => ({ site: l.site, url: l.url, language: l.language || "" }));
   n.external = links
     .filter((l) => l.type !== "STREAMING")
     .map((l) => ({ name: l.site, url: l.url }))
@@ -401,6 +401,27 @@ async function getBookDetail(item) {
     }
   } catch (_) { /* opcional */ }
   return full;
+}
+
+/* ---------- Sitios de lectura/visualización (solo español e inglés) ---------- */
+export function filterEsEn(links) {
+  return (links || []).filter(
+    (l) => !l.language || /english|spanish|espa/i.test(String(l.language))
+  );
+}
+
+// Plataformas legales de lectura de manga con búsqueda directa del título.
+export function mangaReadingSites(title) {
+  const q = encodeURIComponent(title);
+  return [
+    { site: "MANGA Plus · Shueisha", language: "ES/EN", url: `https://mangaplus.shueisha.co.jp/search_result?keyword=${q}` },
+    { site: "VIZ Manga", language: "EN", url: `https://www.viz.com/search?search=${q}` },
+    { site: "Comikey", language: "ES/EN", url: `https://comikey.com/search/?q=${q}` },
+    { site: "Google Play Libros", language: "ES", url: `https://play.google.com/store/search?q=${q}%20manga&c=books` },
+    { site: "BookWalker", language: "EN", url: `https://global.bookwalker.jp/search/?word=${q}` },
+    { site: "Kobo", language: "ES", url: `https://www.kobo.com/mx/es/search?query=${q}` },
+    { site: "Amazon Kindle", language: "ES", url: `https://www.amazon.com.mx/s?k=${q}+manga` },
+  ];
 }
 
 /* ---------- Orden de visualización / lectura (cadena precuela→secuela) ---------- */
