@@ -80,10 +80,7 @@
   <!-- ======= NAVEGACIÓN PRINCIPAL ======= -->
   <nav class="main-nav" role="tablist">
     <button class="nav-tab active" data-view="tv">📺 <span data-i18n="nav.tv">TV en vivo</span></button>
-    <button class="nav-tab" data-view="vod">🎬 <span data-i18n="nav.vod">Películas</span></button>
-    <button class="nav-tab" data-view="retro">📼 <span data-i18n="nav.retro">Series retro</span></button>
     <button class="nav-tab" data-view="yt">▶️ <span data-i18n="nav.yt">YouTube</span></button>
-    <button class="nav-tab" data-view="web">🌐 <span data-i18n="nav.web">Sitios</span></button>
     <button class="nav-tab" data-view="search" data-cat="anime">🎞️ <span data-i18n="nav.anime">Anime</span></button>
     <button class="nav-tab" data-view="search" data-cat="manga">📖 <span data-i18n="nav.manga">Manga</span></button>
     <button class="nav-tab" data-view="search" data-cat="books">📚 <span data-i18n="nav.books">Libros</span></button>
@@ -165,25 +162,6 @@
     </div>
   </main>
 
-  <!-- ======= VISTA: SERIES RETRO ======= -->
-  <main id="viewRetro" class="view hidden">
-    <h2 class="view-title" data-i18n="retro.title">📼 Series retro</h2>
-    <p class="tv-note" data-i18n="retro.note">TV clásica y series de dominio público del Internet Archive (gratis y legal).</p>
-    <div id="retroCats" class="tv-lists"></div>
-    <div class="tv-filters">
-      <input id="retroSearch" type="search" data-i18n-placeholder="retro.searchPh" placeholder="Buscar serie…" class="tv-search" />
-      <select id="retroSort" class="select-mini">
-        <option value="downloads desc" data-i18n="sort.popular">Populares</option>
-        <option value="titleSorter asc" data-i18n="sort.name">Nombre (A-Z)</option>
-        <option value="year desc" data-i18n="sort.newest">Más recientes</option>
-        <option value="year asc" data-i18n="sort.oldest">Más antiguos</option>
-      </select>
-      <span id="retroInfo" class="results-info"></span>
-    </div>
-    <div id="retroGrid" class="cards-grid"></div>
-    <div class="load-more"><button id="retroMore" class="btn btn-primary hidden" data-i18n="search.loadMore">Cargar más</button></div>
-  </main>
-
   <!-- ======= VISTA: YOUTUBE ======= -->
   <main id="viewYt" class="view hidden">
     <h2 class="view-title" data-i18n="yt.title">▶️ YouTube</h2>
@@ -205,47 +183,6 @@
       </div>
     </div>
     <div id="ytGrid" class="cards-grid"></div>
-  </main>
-
-  <!-- ======= VISTA: SITIOS (navegador integrado) ======= -->
-  <main id="viewWeb" class="view hidden">
-    <h2 class="view-title" data-i18n="web.title">🌐 Sitios</h2>
-    <p class="tv-note" data-i18n="web.note">Abre un sitio dentro de AniLector. Usa el motor del navegador con el que abres la app: para Brave (open source), abre AniLector en Brave. Algunos sitios no permiten mostrarse embebidos; ahí usa el botón de pestaña nueva.</p>
-    <form id="webForm" class="url-form">
-      <input id="webUrl" type="text" data-i18n-placeholder="web.ph" placeholder="https://… o pega una URL" />
-      <button class="btn btn-primary" type="submit" data-i18n="web.open">Abrir</button>
-    </form>
-    <div id="webShortcuts" class="tv-lists"></div>
-    <div id="webFrameWrap" class="web-frame-wrap hidden">
-      <div class="tv-player-bar">
-        <span id="webTitle" class="tv-now">—</span>
-        <div class="tv-player-actions">
-          <a id="webExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
-          <button id="webClose" class="btn btn-ghost btn-mini" title="Cerrar">✕</button>
-        </div>
-      </div>
-      <iframe id="webFrame" referrerpolicy="no-referrer" allow="fullscreen; autoplay"></iframe>
-      <div id="webHint" class="tv-error"></div>
-    </div>
-  </main>
-
-  <!-- ======= VISTA: PELÍCULAS (VOD) ======= -->
-  <main id="viewVod" class="view hidden">
-    <h2 class="view-title" data-i18n="vod.title">🎬 Películas</h2>
-    <p class="tv-note" data-i18n="vod.note">Catálogo gratuito y legal de Internet Archive (dominio público y licencias libres).</p>
-    <div id="vodCats" class="tv-lists"></div>
-    <div class="tv-filters">
-      <input id="vodSearch" type="search" data-i18n-placeholder="vod.searchPh" placeholder="Buscar película…" class="tv-search" />
-      <select id="vodSort" class="select-mini">
-        <option value="downloads desc" data-i18n="sort.popular">Populares</option>
-        <option value="titleSorter asc" data-i18n="sort.name">Nombre (A-Z)</option>
-        <option value="year desc" data-i18n="sort.newest">Más recientes</option>
-        <option value="year asc" data-i18n="sort.oldest">Más antiguos</option>
-      </select>
-      <span id="vodInfo" class="results-info"></span>
-    </div>
-    <div id="vodGrid" class="cards-grid"></div>
-    <div class="load-more"><button id="vodMore" class="btn btn-primary hidden" data-i18n="search.loadMore">Cargar más</button></div>
   </main>
 
   <!-- ======= VISTA: RESULTADOS ======= -->

@@ -12,8 +12,6 @@ import {
 } from "./viewer.js";
 import { initAuth } from "./auth.js";
 import { initTv, ensureTvLoaded, pauseTv } from "./tv.js";
-import { initVod, ensureVodLoaded, initRetro, ensureRetroLoaded } from "./vod.js";
-import { initWebApps } from "./webapps.js";
 import { initYouTube } from "./youtube.js";
 
 /* ---------- estado ---------- */
@@ -115,10 +113,7 @@ function cardHTML(item, { library = false } = {}) {
 function showView(view) {
   S.view = view;
   $("viewTv").classList.toggle("hidden", view !== "tv");
-  $("viewVod").classList.toggle("hidden", view !== "vod");
-  $("viewRetro").classList.toggle("hidden", view !== "retro");
   $("viewYt").classList.toggle("hidden", view !== "yt");
-  $("viewWeb").classList.toggle("hidden", view !== "web");
   $("viewSearch").classList.toggle("hidden", view !== "search");
   $("viewLibrary").classList.toggle("hidden", view !== "library");
   $("viewReader").classList.toggle("hidden", view !== "reader");
@@ -131,8 +126,6 @@ function showView(view) {
   if (view === "library") renderLibrary();
   if (view === "tv") ensureTvLoaded();
   else pauseTv(); // no reproducir en segundo plano
-  if (view === "vod") ensureVodLoaded();
-  if (view === "retro") ensureRetroLoaded();
 }
 
 /* ---------- búsqueda ---------- */
@@ -664,9 +657,6 @@ function init() {
   renderRecent();
   bindEvents();
   initTv();
-  initVod();
-  initRetro();
-  initWebApps();
   initYouTube();
   // Página de inicio: TV en vivo
   showView("tv");
