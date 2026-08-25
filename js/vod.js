@@ -26,6 +26,7 @@ async function fetchPage({ append = false } = {}) {
   const col = VOD_COLLECTIONS[state.col];
   let q = "mediatype:(movies)";
   if (col?.collection) q += ` AND collection:(${col.collection})`;
+  if (col?.query) q += ` AND (${col.query})`;
   if (state.query) q += ` AND (title:(${state.query.replace(/[()]/g, "")}))`;
 
   const params = new URLSearchParams();

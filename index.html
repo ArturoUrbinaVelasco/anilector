@@ -92,27 +92,41 @@
     <h2 class="view-title" data-i18n="tv.title">📺 TV en vivo</h2>
     <p class="tv-note" data-i18n="tv.note">Canales abiertos y gratuitos de listas M3U de código abierto (comunidad). Prioridad México.</p>
 
-    <div id="tvPlayer" class="tv-player hidden">
-      <div class="tv-player-bar">
-        <span id="tvNow" class="tv-now">—</span>
-        <div class="tv-player-actions">
-          <a id="tvExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
-          <button id="tvClose" class="btn btn-ghost btn-mini" title="Cerrar">✕</button>
-        </div>
-      </div>
-      <video id="tvVideo" controls playsinline></video>
-      <div id="tvError" class="tv-error hidden"></div>
-    </div>
-
     <div id="tvLists" class="tv-lists"></div>
 
-    <div class="tv-filters">
-      <input id="tvSearch" type="search" data-i18n-placeholder="tv.searchPh" placeholder="Buscar canal…" class="tv-search" />
-      <select id="tvGroup" class="select-mini"></select>
-      <span id="tvInfo" class="results-info"></span>
-    </div>
+    <div class="tv-layout">
+      <!-- Reproductor fijo -->
+      <section class="tv-stage">
+        <div class="tv-player">
+          <div class="tv-player-bar">
+            <span id="tvNow" class="tv-now">—</span>
+            <div class="tv-player-actions">
+              <button id="tvPrev" class="btn btn-ghost btn-mini" title="Canal anterior">⏮</button>
+              <button id="tvNext" class="btn btn-ghost btn-mini" title="Canal siguiente">⏭</button>
+              <a id="tvExternal" class="btn btn-ghost btn-mini" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
+            </div>
+          </div>
+          <div class="tv-video-wrap">
+            <video id="tvVideo" controls playsinline></video>
+            <div id="tvPlaceholder" class="tv-placeholder">
+              <div class="empty-icon">📺</div>
+              <p data-i18n="tv.pick">Elige un canal de la lista para comenzar.</p>
+            </div>
+          </div>
+          <div id="tvError" class="tv-error hidden"></div>
+        </div>
+      </section>
 
-    <div id="tvGrid" class="tv-grid"></div>
+      <!-- Lista de canales -->
+      <aside class="tv-side">
+        <div class="tv-filters">
+          <input id="tvSearch" type="search" data-i18n-placeholder="tv.searchPh" placeholder="Buscar canal…" class="tv-search" />
+          <select id="tvGroup" class="select-mini"></select>
+        </div>
+        <span id="tvInfo" class="results-info"></span>
+        <div id="tvGrid" class="tv-channel-list"></div>
+      </aside>
+    </div>
   </main>
 
   <!-- ======= VISTA: PELÍCULAS (VOD) ======= -->

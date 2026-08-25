@@ -6,9 +6,9 @@ import { t } from "./i18n.js";
 import { M3U_LISTS } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
-const state = { listIndex: 0, channels: [], group: "", query: "", hls: null };
+const state = { listIndex: 0, channels: [], group: "", query: "", hls: null, current: -1, view: [] };
 const cache = {}; // url → channels[]
-const MAX_RENDER = 400;
+const MAX_RENDER = 500;
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -89,6 +89,7 @@ function renderGroups() {
 function renderChannels() {
   const grid = $("tvGrid");
   const ch = filtered();
+  state.view = ch; // lista visible (para zapping anterior/siguiente)
   $("tvInfo").textContent = `${ch.length.toLocaleString()} ${t("tv.channels")}` +
     (ch.length > MAX_RENDER ? ` · ${t("tv.showingFirst")} ${MAX_RENDER}` : "");
   if (!ch.length) {
@@ -96,16 +97,23 @@ function renderChannels() {
     return;
   }
   grid.innerHTML = ch.slice(0, MAX_RENDER).map((c, i) => {
-    const idx = state.channels.indexOf(c);
     const logo = c.logo
       ? `<img class="tv-logo" loading="lazy" src="${esc(c.logo)}" alt="" onerror="this.style.visibility='hidden'" />`
       : `<div class="tv-logo tv-logo-fallback">📺</div>`;
-    return `<button class="tv-card" data-idx="${idx}">
+    return `<button class="tv-row ${c === state.channels[state.current] ? "active" : ""}" data-vi="${i}">
       ${logo}
-      <span class="tv-name">${esc(c.name)}</span>
-      ${c.group ? `<span class="tv-group">${esc(c.group)}</span>` : ""}
+      <span class="tv-row-info">
+        <span class="tv-name">${esc(c.name)}</span>
+        ${c.group ? `<span class="tv-group">${esc(c.group)}</span>` : ""}
+      </span>
     </button>`;
   }).join("");
+}
+
+function highlightCurrent() {
+  const cur = state.channels[state.current];
+  document.querySelectorAll("#tvGrid .tv-row").forEach((r) =>
+    r.classList.toggle("active", state.view[Number(r.dataset.vi)] === cur));
 }
 
 /* ---------- reproductor ---------- */
@@ -115,15 +123,20 @@ function stopPlayback() {
   if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
 }
 
-function play(channel) {
-  const panel = $("tvPlayer");
-  panel.classList.remove("hidden");
-  $("tvNow").textContent = channel.name;
-  $("tvExternal").href = channel.url;
+function playIndex(idx) {
+  const channel = state.channels[idx];
+  if (!channel) return;
+  state.current = idx;
   const v = $("tvVideo");
   const err = $("tvError");
+  const ph = $("tvPlaceholder");
   err.classList.add("hidden");
+  ph.classList.add("hidden");
+  v.classList.add("playing");
+  $("tvNow").textContent = channel.name;
+  $("tvExternal").href = channel.url;
   stopPlayback();
+  highlightCurrent();
 
   const isHls = /\.m3u8(\?|$)/i.test(channel.url);
   const onFail = () => {
@@ -140,13 +153,25 @@ function play(channel) {
       hls.on(window.Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
       hls.on(window.Hls.Events.ERROR, (_e, data) => { if (data?.fatal) { stopPlayback(); onFail(); } });
     } else {
-      // Safari (HLS nativo) o streams directos
-      v.src = channel.url;
+      v.src = channel.url; // Safari (HLS nativo) o streams directos
       v.play().catch(() => {});
       v.onerror = onFail;
     }
   } catch (_) { onFail(); }
-  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Zapping: avanza/retrocede dentro de la lista visible
+function zap(dir) {
+  if (!state.view.length) return;
+  const cur = state.channels[state.current];
+  let vi = state.view.indexOf(cur);
+  if (vi < 0) vi = dir > 0 ? -1 : state.view.length;
+  vi = (vi + dir + state.view.length) % state.view.length;
+  const next = state.view[vi];
+  playIndex(state.channels.indexOf(next));
+  // desplazar la fila activa a la vista
+  const row = document.querySelector(`#tvGrid .tv-row[data-vi="${vi}"]`);
+  row?.scrollIntoView({ block: "nearest" });
 }
 
 /* ---------- interfaz ---------- */
@@ -163,10 +188,18 @@ export function initTv() {
   $("tvSearch").addEventListener("input", (e) => { state.query = e.target.value.trim(); renderChannels(); });
   $("tvGroup").addEventListener("change", (e) => { state.group = e.target.value; renderChannels(); });
   $("tvGrid").addEventListener("click", (e) => {
-    const b = e.target.closest(".tv-card");
-    if (b) play(state.channels[Number(b.dataset.idx)]);
+    const b = e.target.closest(".tv-row");
+    if (b) playIndex(state.channels.indexOf(state.view[Number(b.dataset.vi)]));
   });
-  $("tvClose").addEventListener("click", () => { stopPlayback(); $("tvPlayer").classList.add("hidden"); });
+  $("tvPrev").addEventListener("click", () => zap(-1));
+  $("tvNext").addEventListener("click", () => zap(1));
+  // teclado: flechas para zapear cuando la vista TV está activa
+  document.addEventListener("keydown", (e) => {
+    if ($("viewTv").classList.contains("hidden")) return;
+    if (document.activeElement === $("tvSearch")) return;
+    if (e.key === "ArrowUp") { e.preventDefault(); zap(-1); }
+    if (e.key === "ArrowDown") { e.preventDefault(); zap(1); }
+  });
 }
 
 let loaded = false;

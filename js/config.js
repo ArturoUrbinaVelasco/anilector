@@ -68,8 +68,11 @@ export const M3U_LISTS = [
    ------------------------------------------------------------ */
 export const VOD_COLLECTIONS = [
   { name: "Destacadas", collection: "feature_films" },
+  { name: "Cine en español", query: 'language:(Spanish OR spanish OR español OR castellano)' },
   { name: "Ciencia ficción y terror", collection: "SciFi_Horror" },
   { name: "Cine negro", collection: "film_noir" },
+  { name: "Comedia", query: 'subject:(comedy)' },
+  { name: "Western", query: 'subject:(western)' },
+  { name: "Documentales", query: 'subject:(documentary)' },
   { name: "Animación", collection: "animationandcartoons" },
-  { name: "Clásicos", collection: "classic_tv" },
 ];
