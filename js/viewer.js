@@ -531,10 +531,42 @@ async function renderPdfPage() {
   canvas.style.width = `${viewport.width / (window.devicePixelRatio || 1)}px`;
   await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
   pageInfo().textContent = `${t("reader.page")} ${state.page} ${t("reader.of")} ${state.pdf.numPages}`;
+  pageInfo().title = t("reader.goToPage");
   saveProgress(state.docKey, { page: state.page });
 }
 
 /* ---------- EPUB ---------- */
+/* Un EPUB no tiene páginas fijas: el texto se reparte según el tamaño de
+   letra y de la pantalla, así que «página 40 de 300» no existe. Lo que sí
+   hay, y desde el primer instante, es el capítulo y la página DENTRO del
+   capítulo (`loc.start.displayed`). El porcentaje global llega después. */
+function mostrarAvanceEpub(book, loc, porcentajeListo) {
+  const d = loc?.start?.displayed;
+  const pagina = d?.total ? `${d.page}/${d.total}` : "";
+
+  /* ⚠️ NO basta con preguntar el porcentaje: MIENTRAS epub.js recorre el
+     libro, `percentageFromCfi` YA DEVUELVE NÚMEROS — un 0 para todo lo
+     que aún no ha procesado. Por eso salía «0%» fijo incluso al saltar al
+     último capítulo. Solo vale cuando el recorrido ha TERMINADO. */
+  let pct = null;
+  if (porcentajeListo) {
+    try {
+      const v = book.locations?.percentageFromCfi?.(loc.start.cfi);
+      if (typeof v === "number" && isFinite(v)) pct = Math.round(v * 100);
+    } catch (_) {}
+  }
+
+  const capitulos = book.spine?.length || book.spine?.items?.length || 0;
+  const cap = capitulos ? `${(loc.start.index ?? 0) + 1}/${capitulos}` : "";
+
+  const cabeza = pct != null ? `${pct}%` : (cap ? `c.${cap}` : "");
+  pageInfo().textContent = [cabeza, pagina].filter(Boolean).join(" · ") || "…";
+  pageInfo().title = [
+    cap ? t("reader.infoChapter").replace("%s", cap.replace("/", " " + t("reader.of") + " ")) : "",
+    d?.total ? t("reader.infoPage").replace("%s", `${d.page} ${t("reader.of")} ${d.total}`) : "",
+    pct != null ? `${pct}%` : t("reader.infoCalc"),
+  ].filter(Boolean).join(" · ");
+}
 export async function openEpub(file, title) {
   openModal(title || file.name);
   state.mode = "epub";
@@ -580,14 +612,39 @@ export async function openEpub(file, title) {
   ajustarBotonTipo();
   ajustarBotonTr();
   aplicarTipo();
+  let porcentajeListo = false;
   rendition.on("relocated", (loc) => {
     saveProgress(state.docKey, { cfi: loc.start.cfi });
-    const pct = book.locations?.percentageFromCfi
-      ? Math.round((book.locations.percentageFromCfi(loc.start.cfi) || 0) * 100)
-      : null;
-    pageInfo().textContent = pct != null && !isNaN(pct) ? `${pct}%` : "…";
+    mostrarAvanceEpub(book, loc, porcentajeListo);
   });
-  book.ready.then(() => book.locations.generate(1000)).catch(() => {});
+
+  /* El porcentaje NO está disponible al abrir: epub.js tiene que recorrer
+     el libro entero para calcularlo (medido: 3 s en un libro pequeño, más
+     en uno de verdad y más aún en un teléfono). Mientras tanto devuelve
+     null, y antes eso se pintaba como «0%» fijo: parecía que el libro no
+     avanzaba. Ahora se enseña capítulo y página desde el primer momento,
+     y el porcentaje se añade en cuanto está listo. */
+  book.ready
+    .then(() => book.locations.generate(1000))
+    .then(() => {
+      porcentajeListo = true;
+      const actual = rendition.currentLocation?.();
+      if (actual?.start) mostrarAvanceEpub(book, actual, true);
+    })
+    .catch(() => {});
+
+  /* Pellizco dentro del EPUB: cada capítulo se pinta en su propio iframe,
+     así que los gestos hay que engancharlos ahí. El `hook` solo alcanza a
+     los iframes FUTUROS — el que ya está en pantalla hay que hacerlo a
+     mano, o el gesto no funciona hasta pasar de página. */
+  const prepararIframe = (contents) => {
+    const d = contents?.document || contents;
+    if (!d) return;
+    activarGestosZoom(d);
+    try { d.documentElement.style.touchAction = "pan-x pan-y"; } catch (_) {}
+  };
+  try { rendition.hooks?.content?.register?.(prepararIframe); } catch (_) {}
+  try { (rendition.getContents() || []).forEach(prepararIframe); } catch (_) {}
 
   // Al pasar de página, epub.js pinta la sección en un iframe nuevo y la
   // traducción se quedaría atrás. Si estaba activa, se vuelve a aplicar.
@@ -669,9 +726,29 @@ export async function openMobi(file, title) {
       }
       loaded++;
     }
-    pageInfo().textContent = `${loaded} / ${sections.length}`;
+    // OJO: aquí antes se pintaba `loaded / total`, o sea CUÁNTAS SECCIONES
+    // SE HABÍAN CARGADO, no por dónde ibas. Al recorrer el documento el
+    // número casi no se movía y parecía que no avanzaba nada.
+    mostrarAvanceMobi();
     if (loaded >= sections.length) sentinel.remove();
     busy = false;
+  }
+
+  let secActual = 0;
+  function mostrarAvanceMobi() {
+    pageInfo().textContent = `${secActual + 1}/${sections.length}`;
+    pageInfo().title = t("reader.infoSection")
+      .replace("%s", `${secActual + 1} ${t("reader.of")} ${sections.length}`);
+  }
+  /* Cuál es la sección que estás mirando: la última cuyo comienzo queda
+     por encima del borde superior del área de lectura. */
+  function seccionVisible() {
+    let sec = 0;
+    for (const c of doc.querySelectorAll(".ebook-section")) {
+      if (c.offsetTop <= body().scrollTop + 4) sec = Number(c.dataset.sec) || 0;
+      else break;
+    }
+    return sec;
   }
   /* Saltar a una sección exige haber cargado las anteriores (el documento
      es una tira continua). Se cargan en tandas grandes para que un salto
@@ -706,18 +783,22 @@ export async function openMobi(file, title) {
      el principio. Se guarda la sección visible arriba y el desplazamiento
      dentro de ella. */
   const guardarSitio = () => {
-    const cajas = doc.querySelectorAll(".ebook-section");
-    let sec = 0, off = 0;
-    for (const c of cajas) {
-      if (c.offsetTop <= body().scrollTop + 4) {
-        sec = Number(c.dataset.sec) || 0;
-        off = body().scrollTop - c.offsetTop;
-      } else break;
-    }
-    saveProgress(state.docKey, { sec, off: Math.round(off) });
+    const sec = seccionVisible();
+    const caja = doc.querySelector(`.ebook-section[data-sec="${sec}"]`);
+    saveProgress(state.docKey, {
+      sec,
+      off: Math.round(body().scrollTop - (caja?.offsetTop || 0)),
+    });
   };
   let reloj = null;
-  state.onScroll = () => { clearTimeout(reloj); reloj = setTimeout(guardarSitio, 400); };
+  state.onScroll = () => {
+    // El número se actualiza al instante (es barato); guardar en disco va
+    // con retardo para no escribir en cada píxel de scroll.
+    const sec = seccionVisible();
+    if (sec !== secActual) { secActual = sec; mostrarAvanceMobi(); }
+    clearTimeout(reloj);
+    reloj = setTimeout(guardarSitio, 400);
+  };
   body().addEventListener("scroll", state.onScroll);
 
   // Índice: foliate expone book.toc y resolveHref() → { index } de sección.
@@ -750,7 +831,9 @@ export async function openMobi(file, title) {
     const caja = doc.querySelector(`.ebook-section[data-sec="${guardado.sec || 0}"]`);
     if (caja) body().scrollTop = caja.offsetTop + (guardado.off || 0);
     quitarLoaderFlotante();
+    secActual = seccionVisible();
   }
+  mostrarAvanceMobi();
 }
 
 /* Aviso discreto mientras se cargan las secciones de un salto largo:
@@ -980,6 +1063,7 @@ async function renderImage() {
   const idx = state.imgIndex;
   const p = state.images[idx];
   pageInfo().textContent = `${idx + 1} / ${state.images.length}`;
+  pageInfo().title = t("reader.goToPage");
   saveProgress(state.docKey, { index: idx });
   try {
     const url = await resolvePage(p);
@@ -1558,6 +1642,10 @@ export function bindViewerControls() {
   // Saltar a una página escribiendo el número (PDF y cómics).
   pageInfo().addEventListener("click", pedirPagina);
 
+  // Pellizco / Ctrl+rueda sobre el documento (el EPUB se engancha aparte,
+  // dentro de su iframe, al abrirlo).
+  activarGestosZoom(document);
+
   document.getElementById("vTocPanel")?.addEventListener("click", (e) => {
     const b = e.target.closest(".toc-item");
     if (!b) return;
@@ -1658,6 +1746,54 @@ function zoomBy(d) {
     cambiarTipo("size", d > 0 ? 1 : -1);
   }
 }
+/* ---------- pellizco y Ctrl+rueda ----------
+   Sin esto, pellizcar en el trackpad o con dos dedos agranda TODA la web
+   (menús y barras incluidos), que es justo lo que no quieres leyendo. El
+   pellizco del trackpad llega al navegador como una rueda con Ctrl
+   pulsado; el de los dedos, como dos toques a la vez. */
+const PASO_ZOOM = 0.2;
+const FRENO_ZOOM = 90;      // ms entre pasos: el PDF se vuelve a dibujar en cada uno
+let ultimoZoom = 0;
+
+function enVisor() {
+  return !modal()?.classList.contains("hidden");
+}
+function zoomFrenado(d) {
+  const ahora = Date.now();
+  if (ahora - ultimoZoom < FRENO_ZOOM) return;
+  ultimoZoom = ahora;
+  zoomBy(d);
+}
+
+export function activarGestosZoom(doc) {
+  if (!doc || doc.__aniGestos) return;
+  doc.__aniGestos = true;
+
+  doc.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey || !enVisor()) return;
+    e.preventDefault();                       // si no, el navegador hace su zoom
+    zoomFrenado(e.deltaY < 0 ? PASO_ZOOM : -PASO_ZOOM);
+  }, { passive: false });
+
+  const separacion = (t) =>
+    Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  let base = 0;
+  doc.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2 && enVisor()) base = separacion(e.touches);
+  }, { passive: true });
+  doc.addEventListener("touchmove", (e) => {
+    if (e.touches.length !== 2 || !base || !enVisor()) return;
+    e.preventDefault();
+    const ahora = separacion(e.touches);
+    const razon = ahora / base;
+    // Umbral generoso: un pellizco tembloroso no debe disparar diez pasos.
+    if (razon > 1.15) { zoomFrenado(PASO_ZOOM); base = ahora; }
+    else if (razon < 0.87) { zoomFrenado(-PASO_ZOOM); base = ahora; }
+  }, { passive: false });
+  doc.addEventListener("touchend", () => { base = 0; }, { passive: true });
+  doc.addEventListener("touchcancel", () => { base = 0; }, { passive: true });
+}
+
 function aplicarZoomImagen() {
   const img = body().querySelector("img.page-img");
   if (!img) return;

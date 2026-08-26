@@ -476,7 +476,8 @@ button.recent-file:hover, button.recent-file:focus-visible {
 .viewer-controls { display: flex; align-items: center; gap: 0.3rem; }
 .viewer-controls .btn, .viewer-actions .btn { padding: 0.35rem 0.7rem; }
 .viewer-actions { display: flex; gap: 0.3rem; }
-.page-info { font-size: 0.85rem; color: var(--text-dim); min-width: 70px; text-align: center; }
+/* Cabe «12% · 3/10» y «c.2/30 · 3/10» sin que baile la barra al cambiar. */
+.page-info { font-size: 0.85rem; color: var(--text-dim); min-width: 92px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .viewer-body {
   flex: 1;
   overflow: auto;
@@ -485,6 +486,9 @@ button.recent-file:hover, button.recent-file:focus-visible {
   justify-content: center;
   padding: 0.5rem;
   position: relative;
+  /* Se permite arrastrar para desplazarse, pero NO el zoom del navegador:
+     el pellizco lo recoge el visor y agranda el documento, no la app. */
+  touch-action: pan-x pan-y;
 }
 .viewer-body canvas { max-width: 100%; height: auto; box-shadow: var(--shadow); border-radius: 4px; }
 .viewer-body iframe { width: 100%; height: 100%; border: none; border-radius: 8px; background: #fff; }
@@ -1373,7 +1377,7 @@ button.recent-file:hover, button.recent-file:focus-visible {
 
   /* ---- Visor a pantalla completa ---- */
   .viewer-toolbar { gap: 0.3rem; }
-  .page-info { min-width: 52px; font-size: 0.75rem; }
+  .page-info { min-width: 78px; font-size: 0.72rem; }
 
   /* Con el índice, la tipografía y el traductor son 7 botones: en un
      teléfono ya no caben junto al título y el ✕ se quedaba solo en una
