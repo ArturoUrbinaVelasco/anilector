@@ -18,6 +18,8 @@ import { initTv, ensureTvLoaded, pauseTv, countChannelMatches, applyChannelSearc
 import { initYouTube, searchYouTubeFor } from "./youtube.js";
 import { initWebApps } from "./webapps.js";
 import { initBrand } from "./brand.js";
+import { initTvMode } from "./tvmode.js";
+import { initPwa } from "./pwa.js";
 
 /* ---------- estado ---------- */
 const S = {
@@ -982,6 +984,8 @@ function init() {
   initYouTube();
   initWebApps();
   initBrand();
+  initTvMode();
+  initPwa();
 
   syncStickyOffsets();
   window.addEventListener("resize", syncStickyOffsets);

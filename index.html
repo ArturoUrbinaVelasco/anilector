@@ -6,11 +6,20 @@
   <title>AniLector — Anime · Manga · Libros</title>
   <meta name="description" content="Busca anime, manga y libros; consulta episodios, capítulos y tomos en orden, y lee PDF/EPUB online o desde tu equipo." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#14161f" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="preconnect" href="https://api.jikan.moe" />
   <link rel="stylesheet" href="css/styles.css" />
+  <!-- JSZip va EN EL REPOSITORIO, no en un CDN: es la que abre los CBZ/ZIP
+       y la que arma el CBZ al guardar, y tiene que funcionar sin conexión
+       (el service worker solo puede guardar archivos de este mismo sitio). -->
+  <script src="vendor/jszip/jszip.min.js" defer></script>
   <!-- Librerías de visor (CDN) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.93/epub.min.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mpegts.js/1.7.3/mpegts.js" defer></script>
@@ -197,9 +206,22 @@
         <div class="tv-video-wrap">
           <div id="ytFrame"></div>
         </div>
+        <!-- Aviso de «lo retomé donde lo dejaste», con salida por si no
+             era eso lo que querías. Se rellena desde youtube.js. -->
+        <div id="ytResumed" class="yt-resumed hidden"></div>
       </div>
       <aside id="ytRelated" class="yt-related"></aside>
     </div>
+    <div class="yt-tools">
+      <select id="ytDuration" class="select-mini" title="Duración">
+        <option value="" data-i18n="yt.anyDur">⏱️ Cualquier duración</option>
+        <option value="short" data-i18n="yt.short">Menos de 4 min</option>
+        <option value="medium" data-i18n="yt.medium">4 – 20 min</option>
+        <option value="long" data-i18n="yt.long">Más de 20 min</option>
+      </select>
+      <button id="ytHistory" class="chip" data-i18n="yt.history">🕘 Historial</button>
+    </div>
+    <div id="ytFilterInfo" class="results-info hidden"></div>
     <div id="ytListHead" class="yt-list-head hidden"></div>
     <div id="ytGrid" class="cards-grid"></div>
     <div id="ytMoreWrap" class="load-more-wrap hidden">
@@ -352,6 +374,10 @@
       <button class="more-item" id="brandBtnM"><span>🎨</span><span data-i18n="brand.title">Personalizar</span></button>
       <div class="more-sep"></div>
       <div class="more-row">
+        <label data-i18n="more.tvmode">Modo TV (mando a distancia)</label>
+        <input id="tvModeToggle" type="checkbox" class="more-switch" />
+      </div>
+      <div class="more-row">
         <label data-i18n="more.lang">Idioma</label>
         <select id="langSelectM" class="select-mini">
           <option value="es">🇲🇽 ES</option>
@@ -408,6 +434,22 @@
       <div class="brand-footer">
         <button id="brandReset" class="btn btn-ghost" data-i18n="brand.reset">Restablecer</button>
         <button id="brandSave" class="btn btn-primary" data-i18n="brand.save">Guardar</button>
+      </div>
+
+      <div class="brand-sep"></div>
+
+      <h3 data-i18n="backup.title">💾 Copia de seguridad</h3>
+      <p class="brand-hint" data-i18n="backup.note">Descarga todos tus datos en un archivo (pocos KB) y vuelve a cargarlo cuando quieras. No usa tu cuenta de Google.</p>
+      <div class="brand-actions">
+        <button id="backupExport" class="btn btn-ghost" data-i18n="backup.export">⬇️ Exportar</button>
+        <label class="btn btn-ghost file-label">
+          <input id="backupImport" type="file" accept="application/json,.json" hidden />
+          <span data-i18n="backup.import">⬆️ Importar</span>
+        </label>
+      </div>
+
+      <div id="pwaInstallRow" class="brand-actions hidden" style="margin-top:1rem">
+        <button id="pwaInstall" class="btn btn-primary" data-i18n="pwa.install">📲 Instalar la app</button>
       </div>
     </div>
   </div>

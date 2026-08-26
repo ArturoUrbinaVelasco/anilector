@@ -29,7 +29,45 @@ const state = {
   related: [],        // relacionados del video actual
   autoplay: true,
   history: [],        // ids ya reproducidos, para no repetir en cadena
+  fDur: "",           // filtro de duración
+  fEdad: "",          // (reservado) filtro de antigüedad
 };
+
+/* ---------- minuto recordado e historial ----------
+   Ya se recuerda por dónde vas en capítulos y páginas; con los videos
+   faltaba. Se guarda el segundo cada pocos segundos mientras se
+   reproduce y se retoma al volver a abrirlo. */
+const PROG_KEY = "anilector.ytprogress";
+const HIST_KEY = "anilector.ythistory";
+const MIN_GUARDAR = 15;     // por debajo de esto no vale la pena
+const MARGEN_FIN = 20;      // si falta menos, se considera terminado
+
+function leerJSON(k, def) {
+  try { return JSON.parse(localStorage.getItem(k) || "null") ?? def; }
+  catch { return def; }
+}
+function progresos() { return leerJSON(PROG_KEY, {}); }
+function guardarProgreso(id, seg, dur) {
+  if (!id || !(seg > MIN_GUARDAR)) return;
+  const p = progresos();
+  // Terminado o casi: se olvida, para no ofrecer "retomar" al final.
+  if (dur && dur - seg < MARGEN_FIN) delete p[id];
+  else p[id] = { s: Math.floor(seg), d: Math.floor(dur || 0), ts: Date.now() };
+  // Tope para que no crezca sin control
+  const ids = Object.keys(p).sort((a, b) => (p[b].ts || 0) - (p[a].ts || 0));
+  for (const extra of ids.slice(200)) delete p[extra];
+  try { localStorage.setItem(PROG_KEY, JSON.stringify(p)); } catch (_) {}
+}
+function progresoDe(id) { return progresos()[id] ?? null; }
+
+export function historial() { return leerJSON(HIST_KEY, []); }
+function anotarHistorial(v) {
+  if (!v?.id) return;
+  const h = historial().filter((x) => x.id !== v.id);
+  h.unshift({ id: v.id, title: v.title || v.id, uploader: v.uploader || "",
+              thumb: v.thumb || "", duration: v.duration || "", ts: Date.now() });
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, 100))); } catch (_) {}
+}
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -211,19 +249,44 @@ function loadIframeApi() {
   return ytApiReady;
 }
 
+let tickProgreso = null;
 function onPlayerState(ev) {
-  // 0 = ENDED
-  if (ev.data === 0) playNext();
+  // 1 = reproduciendo, 2 = pausa, 0 = terminado
+  clearInterval(tickProgreso);
+  if (ev.data === 1) {
+    tickProgreso = setInterval(() => {
+      try {
+        guardarProgreso(state.current?.id, player.getCurrentTime(), player.getDuration());
+      } catch (_) {}
+    }, 5000);
+  } else if (ev.data === 2) {
+    try { guardarProgreso(state.current?.id, player.getCurrentTime(), player.getDuration()); } catch (_) {}
+  }
+  if (ev.data === 0) {
+    // Terminado: se olvida el punto guardado y se encadena.
+    try {
+      const p = progresos(); delete p[state.current?.id];
+      localStorage.setItem(PROG_KEY, JSON.stringify(p));
+    } catch (_) {}
+    playNext();
+  }
 }
 
-async function mountPlayer(id) {
+async function mountPlayer(id, desde = 0) {
   await loadIframeApi();
-  if (player?.loadVideoById) { player.loadVideoById(id); return; }
+  if (player?.loadVideoById) {
+    // El objeto acepta el segundo de inicio: así se retoma donde ibas.
+    player.loadVideoById(desde > 0 ? { videoId: id, startSeconds: desde } : id);
+    return;
+  }
   // Si quedó un iframe del respaldo, hay que devolver el hueco a <div>.
   if ($("ytFrame")?.tagName === "IFRAME") resetPlayerHost();
   player = new window.YT.Player("ytFrame", {
     videoId: id,
-    playerVars: { autoplay: 1, rel: 0, playsinline: 1, modestbranding: 1 },
+    playerVars: {
+      autoplay: 1, rel: 0, playsinline: 1, modestbranding: 1,
+      ...(desde > 0 ? { start: Math.floor(desde) } : {}),
+    },
     events: { onStateChange: onPlayerState },
   });
 }
@@ -231,10 +294,11 @@ async function mountPlayer(id) {
 /* Respaldo si la IFrame API no carga (bloqueada, sin red…): iframe
    normal. El video se ve; lo único que se pierde es el encadenado
    automático, porque un iframe suelto no avisa cuándo termina. */
-function mountPlain(id) {
+function mountPlain(id, desde = 0) {
   const host = $("ytFrame");
   if (!host) return;
-  const src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
+  const src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0` +
+    (desde > 0 ? `&start=${Math.floor(desde)}` : "");
   if (host.tagName === "IFRAME") { host.src = src; return; }
   const f = document.createElement("iframe");
   f.id = "ytFrame";
@@ -270,8 +334,15 @@ async function play(id, title, { queue = null, index = -1 } = {}) {
   $("ytPlayer").classList.remove("hidden");
   $("ytNow").textContent = title || id;
   $("ytExternal").href = `https://www.youtube.com/watch?v=${id}`;
-  try { await mountPlayer(id); }
-  catch (_) { mountPlain(id); }
+
+  // ¿Habíamos dejado este video a medias?
+  const guardado = progresoDe(id);
+  const desde = guardado?.s > MIN_GUARDAR ? guardado.s : 0;
+  anotarHistorial({ id, title, ...(state.queue.find((v) => v.id === id) || {}) });
+
+  try { await mountPlayer(id, desde); }
+  catch (_) { mountPlain(id, desde); }
+  if (desde) mostrarRetomado(desde);
   $("ytPlayer").scrollIntoView({ behavior: "smooth", block: "start" });
   markPlaying();
   loadRelated(id);
@@ -293,6 +364,21 @@ function playNext() {
   const inQueue = state.qIndex >= 0 && state.queue[state.qIndex + 1]?.id === n.id;
   if (inQueue) play(n.id, n.title, { queue: state.queue, index: state.qIndex + 1 });
   else play(n.id, n.title, { queue: state.related, index: state.related.findIndex((v) => v.id === n.id) });
+}
+
+/* Aviso discreto de que se retomó el video, con opción de empezar de cero. */
+function mostrarRetomado(seg) {
+  const bar = $("ytResumed");
+  if (!bar) return;
+  bar.classList.remove("hidden");
+  bar.innerHTML = `<span>⏪ ${t("yt.resumedAt").replace("%s", fmtDur(seg))}</span>
+    <button class="btn btn-ghost btn-mini" id="ytFromStart">${t("yt.fromStart")}</button>`;
+  $("ytFromStart").addEventListener("click", () => {
+    try { player?.seekTo(0, true); } catch (_) {}
+    bar.classList.add("hidden");
+  });
+  clearTimeout(bar._t);
+  bar._t = setTimeout(() => bar.classList.add("hidden"), 8000);
 }
 
 async function loadRelated(id) {
@@ -369,17 +455,42 @@ function cardHTML(v) {
 
 function renderResults({ append = false } = {}) {
   const grid = $("ytGrid");
-  if (!state.items.length) {
+  const visibles = aplicarFiltros(state.items);
+  const ocultos = state.items.length - visibles.length;
+  const aviso = $("ytFilterInfo");
+  if (aviso) {
+    aviso.classList.toggle("hidden", !ocultos);
+    if (ocultos) aviso.textContent = t("yt.filtered").replace("%s", ocultos);
+  }
+  if (!visibles.length) {
     grid.innerHTML = `<div class="empty-state"><div class="empty-icon">🔎</div><p>${t("misc.noResults")}</p></div>`;
     $("ytMoreWrap").classList.add("hidden");
     return;
   }
-  const html = (append ? state.items.slice(grid.querySelectorAll(".yt-card").length) : state.items)
-    .map(cardHTML).join("");
-  if (append) grid.insertAdjacentHTML("beforeend", html);
-  else grid.innerHTML = html;
+  // Con filtros activos se repinta entero: el recorte cambia el orden.
+  grid.innerHTML = visibles.map(cardHTML).join("");
   $("ytMoreWrap").classList.toggle("hidden", !state.nextPage);
   markPlaying();
+}
+
+/* Filtros de duración y antigüedad.
+   El scraper no puede pedirle a YouTube sus filtros oficiales (irían en
+   un token cifrado), así que se aplican sobre los resultados que llegan.
+   Por eso se avisa de cuántos se ocultaron: si el filtro es estricto
+   puede dejar pocos, y conviene pulsar «ver más resultados». */
+function pasaFiltros(v) {
+  if (v.type === "playlist") return state.fDur === "" && state.fEdad === "";
+  if (state.fDur) {
+    const seg = v.seconds ?? null;
+    if (seg == null) return false;
+    if (state.fDur === "short" && seg > 4 * 60) return false;
+    if (state.fDur === "medium" && (seg <= 4 * 60 || seg > 20 * 60)) return false;
+    if (state.fDur === "long" && seg <= 20 * 60) return false;
+  }
+  return true;
+}
+function aplicarFiltros(items) {
+  return (items || []).filter(pasaFiltros);
 }
 
 async function doSearch(q) {
@@ -460,6 +571,43 @@ export function searchYouTubeFor(q) {
   doSearch(q);
 }
 
+/* Historial de lo reproducido. */
+function mostrarHistorial() {
+  const h = historial();
+  const grid = $("ytGrid");
+  $("ytMoreWrap").classList.add("hidden");
+  $("ytFilterInfo")?.classList.add("hidden");
+  const head = $("ytListHead");
+  head.classList.remove("hidden");
+  head.innerHTML = `<span class="yt-list-title">🕘 ${t("yt.history")} · ${h.length}</span>
+    ${h.length ? `<button class="btn btn-ghost btn-mini" id="ytHistClear">${t("yt.clearHistory")}</button>` : ""}
+    <button class="btn btn-ghost btn-mini" id="ytHistBack">✕</button>`;
+  $("ytHistBack").addEventListener("click", () => {
+    head.classList.add("hidden");
+    if (state.lastQuery) doSearch(state.lastQuery);
+    else { state.items = []; renderResults(); }
+  });
+  $("ytHistClear")?.addEventListener("click", () => {
+    try { localStorage.removeItem(HIST_KEY); } catch (_) {}
+    mostrarHistorial();
+  });
+  if (!h.length) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">🕘</div><p>${t("yt.noHistory")}</p></div>`;
+    return;
+  }
+  // Se muestran con su punto guardado, si lo hay.
+  state.items = h.map((v) => ({ ...v, type: "video" }));
+  state.nextPage = null;
+  grid.innerHTML = state.items.map((v) => {
+    const pr = progresoDe(v.id);
+    const pct = pr?.d ? Math.min(100, Math.round(pr.s / pr.d * 100)) : 0;
+    return cardHTML(v).replace("</div>\n    </article>",
+      `</div>${pct ? `<span class="yt-progress"><i style="width:${pct}%"></i></span>` : ""}
+    </article>`);
+  }).join("");
+  markPlaying();
+}
+
 export function initYouTube() {
   $("ytForm").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -486,6 +634,17 @@ export function initYouTube() {
   });
 
   $("ytMore").addEventListener("click", loadMore);
+  $("ytHistory")?.addEventListener("click", mostrarHistorial);
+  $("ytDuration")?.addEventListener("change", (e) => {
+    state.fDur = e.target.value;
+    try { localStorage.setItem("anilector.ytdur", state.fDur); } catch (_) {}
+    renderResults();
+  });
+  try {
+    const g = localStorage.getItem("anilector.ytdur") || "";
+    state.fDur = g;
+    if ($("ytDuration")) $("ytDuration").value = g;
+  } catch (_) {}
   $("ytNext").addEventListener("click", () => {
     const n = nextUp();
     if (n) playNext();

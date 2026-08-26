@@ -28,6 +28,7 @@ const state = {
   mobiBook: null,
   archive: null,     // handle de libarchive abierto (hay que cerrarlo)
   webtoon: false,    // tira vertical en vez de página a página
+  night: false,      // lectura nocturna (filtro cálido)
   blobUrls: new Set(),
   docKey: null,      // clave para recordar progreso
 };
@@ -156,6 +157,9 @@ export function closeViewer() {
   if (state.pdf?.destroy) { try { state.pdf.destroy(); } catch (_) {} }
   revokeAll();
   document.getElementById("vWebtoon")?.remove();
+  document.getElementById("vSave")?.remove();
+  document.getElementById("vNight")?.remove();
+  body().classList.remove("night");
   Object.assign(state, {
     mode: null, pdf: null, images: [], imgIndex: 0,
     epubRendition: null, mobiBook: null, archive: null, docKey: null,
@@ -351,6 +355,56 @@ export async function openImages(pages, title) {
   await renderImage();
 }
 
+/* Guarda las páginas abiertas como un CBZ para leerlo sin conexión.
+   Un CBZ es un ZIP de imágenes numeradas: con JSZip (ya cargado) se
+   arma en el navegador, sin subir nada a ningún sitio. */
+async function descargarCBZ() {
+  const btn = document.getElementById("vSave");
+  if (!btn || btn.dataset.busy) return;
+  const original = btn.textContent;
+  btn.dataset.busy = "1";
+  try {
+    if (!window.JSZip) throw new Error("JSZip");
+    const zip = new window.JSZip();
+    const total = state.images.length;
+    const ancho = String(total).length;
+    for (let i = 0; i < total; i++) {
+      btn.textContent = `${i + 1}/${total}`;
+      const url = await resolvePage(state.images[i]);
+      const blob = await (await fetch(url)).blob();
+      const ext = (state.images[i].name?.match(/\.(\w+)$/)?.[1] || "jpg").toLowerCase();
+      zip.file(`${String(i + 1).padStart(ancho, "0")}.${ext}`, blob);
+    }
+    btn.textContent = "⏳";
+    const out = await zip.generateAsync({ type: "blob" });
+    const nombre = (titleEl().textContent || "manga").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(out);
+    a.download = `${nombre}.cbz`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) {
+    console.warn("CBZ:", e.message);
+    alert(t("reader.saveFailed"));
+  } finally {
+    btn.textContent = original;
+    delete btn.dataset.busy;
+  }
+}
+
+/* Modo lectura nocturna: baja el brillo y calienta el tono. Es un
+   filtro CSS sobre las páginas, no toca los archivos. */
+function aplicarNoche() {
+  document.getElementById("viewerBody")?.classList.toggle("night", !!state.night);
+  const b = document.getElementById("vNight");
+  if (b) b.textContent = state.night ? "🌙" : "☀️";
+}
+function toggleNoche() {
+  state.night = !state.night;
+  try { localStorage.setItem("anilector.readNight", state.night ? "1" : "0"); } catch (_) {}
+  aplicarNoche();
+}
+
 /* Botón para alternar entre página a página y tira vertical. */
 function addWebtoonToggle() {
   document.getElementById("vWebtoon")?.remove();
@@ -373,6 +427,29 @@ function addWebtoonToggle() {
     }
   });
   controls().insertBefore(btn, document.getElementById("vZoomOut"));
+
+  // Guardar como CBZ (solo si las páginas vienen de un comprimido)
+  document.getElementById("vSave")?.remove();
+  if (state.images.some((p) => typeof p.get === "function")) {
+    const save = document.createElement("button");
+    save.id = "vSave";
+    save.className = "btn btn-ghost";
+    save.title = t("reader.saveCbz");
+    save.textContent = "💾";
+    save.addEventListener("click", descargarCBZ);
+    controls().insertBefore(save, document.getElementById("vZoomOut"));
+  }
+
+  // Lectura nocturna
+  document.getElementById("vNight")?.remove();
+  const night = document.createElement("button");
+  night.id = "vNight";
+  night.className = "btn btn-ghost";
+  night.title = t("reader.night");
+  night.addEventListener("click", toggleNoche);
+  controls().insertBefore(night, document.getElementById("vZoomOut"));
+  try { state.night = localStorage.getItem("anilector.readNight") === "1"; } catch (_) {}
+  aplicarNoche();
 }
 
 /* Tira vertical continua (estilo webtoon). Las páginas se cargan según

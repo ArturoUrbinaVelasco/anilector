@@ -577,6 +577,55 @@ body {
 /* ---------- Buscador único: atajos a otras secciones ---------- */
 .cross-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.7rem; }
 
+/* ============================================================
+   MODO SMART TV
+   Una TV se ve desde el sofá, a 2-3 metros: los tamaños de teléfono
+   ahí no se leen. Y como no hay ratón, el foco TIENE que verse desde
+   lejos, sin ambigüedad.
+   ============================================================ */
+[data-tv="1"] { font-size: 20px; }
+[data-tv="1"] .view { max-width: 1800px; padding: 1.5rem 2.5rem 3rem; }
+[data-tv="1"] .btn { padding: 0.7rem 1.4rem; font-size: 1rem; }
+[data-tv="1"] .btn-mini { padding: 0.5rem 1rem; font-size: 0.9rem; }
+[data-tv="1"] .nav-tab { padding: 0.7rem 1.5rem; font-size: 1.05rem; }
+[data-tv="1"] .cards-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1.6rem; }
+[data-tv="1"] .card-title { font-size: 1.05rem; }
+[data-tv="1"] .tv-row { padding: 0.8rem 1rem; }
+[data-tv="1"] .tv-name { font-size: 1.05rem; }
+[data-tv="1"] .tv-group { font-size: 0.85rem; }
+[data-tv="1"] .tv-logo { width: 52px; height: 52px; }
+[data-tv="1"] .tv-channel-list { max-height: none; }
+[data-tv="1"] .yt-rel-title { font-size: 0.95rem; }
+[data-tv="1"] .mobile-nav { display: none; }
+[data-tv="1"] .search-bar input[type="search"] { font-size: 1.05rem; padding: 0.7rem 1.1rem; }
+
+/* El foco: grueso, con halo y un ligero acercamiento. Debe cantar. */
+[data-tv="1"] :focus { outline: none; }
+[data-tv="1"] :focus-visible,
+[data-tv="1"] .card:focus, [data-tv="1"] .tv-row:focus, [data-tv="1"] .yt-card:focus,
+[data-tv="1"] .yt-rel:focus, [data-tv="1"] .continue-card:focus,
+[data-tv="1"] .ep-item:focus, [data-tv="1"] .arch-item:focus,
+[data-tv="1"] .btn:focus, [data-tv="1"] .nav-tab:focus,
+[data-tv="1"] .chip:focus, [data-tv="1"] input:focus, [data-tv="1"] select:focus {
+  outline: 4px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 10px;
+  transform: scale(1.03);
+  transition: transform 0.12s;
+  z-index: 2;
+  position: relative;
+}
+[data-tv="1"] .card:focus, [data-tv="1"] .yt-card:focus { transform: scale(1.06); }
+/* Aviso de que el modo está encendido */
+[data-tv="1"] .brand::after {
+  content: "📺 TV";
+  font-size: 0.65rem; font-weight: 800; letter-spacing: 0.5px;
+  background: var(--accent); color: var(--accent-contrast);
+  border-radius: 999px; padding: 0.15rem 0.5rem; margin-left: 0.4rem;
+}
+.more-switch { width: 44px; height: 24px; accent-color: var(--accent); cursor: pointer; }
+
 /* ---------- Personalizar marca ---------- */
 .brand-icon { display: inline-flex; align-items: center; justify-content: center; }
 .brand-img { width: 1.6rem; height: 1.6rem; object-fit: contain; display: block; border-radius: 6px; }
@@ -615,6 +664,9 @@ body {
 .brand-msg { color: var(--danger); font-size: 0.8rem; }
 .brand-msg:empty { display: none; }
 .brand-footer { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.2rem; }
+.brand-sep { height: 1px; background: var(--border); margin: 1.5rem 0 1.2rem; }
+.brand-card h3 { font-size: 1rem; margin-bottom: 0.3rem; }
+.brand-card h3 + .brand-hint { display: block; margin-bottom: 0.8rem; }
 @media (max-width: 720px) {
   .brand-card { padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); }
   .brand-footer .btn { flex: 1; justify-content: center; }
@@ -911,6 +963,27 @@ body {
   display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .yt-rel-meta { font-size: 0.72rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.yt-tools { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.yt-resumed {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-alt));
+  border: 1px solid var(--accent); border-radius: 10px;
+  padding: 0.4rem 0.8rem; margin-bottom: 0.5rem; font-size: 0.85rem;
+}
+.yt-progress {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: var(--border);
+}
+.yt-progress i { display: block; height: 100%; background: var(--danger, #e03131); }
+
+/* Lectura nocturna: baja el brillo y calienta el tono de las páginas */
+.viewer-body.night img, .viewer-body.night canvas, .viewer-body.night .webtoon img {
+  filter: brightness(0.78) sepia(0.35) saturate(0.85);
+}
+.viewer-body.night .text-doc, .viewer-body.night .ebook-doc {
+  background: #2a2620; color: #d9cfbe;
+}
 
 .yt-auto { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; color: var(--text-dim); cursor: pointer; user-select: none; }
 .yt-auto input { accent-color: var(--accent); cursor: pointer; }

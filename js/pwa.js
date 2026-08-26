@@ -1,0 +1,129 @@
+/* ============================================================
+   AniLector — instalación (PWA) y copia de seguridad en archivo
+   ============================================================ */
+import { t } from "./i18n.js";
+
+const $ = (id) => document.getElementById(id);
+
+/* Todo lo que compone "tus datos". Debe coincidir con lo que
+   auth.js sincroniza con Drive, más los ajustes locales. */
+const CLAVES = [
+  "anilector.library", "anilector.progress", "anilector.recent",
+  "anilector.seen", "anilector.sites", "anilector.tvfavs",
+  "anilector.brand", "anilector.theme", "anilector.lang",
+  "anilector.tvlast", "anilector.ytprogress", "anilector.ythistory",
+];
+
+function toast(msg) {
+  const el = $("toast");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.add("hidden"), 3000);
+}
+
+/* ---------- copia de seguridad ---------- */
+export function exportarDatos() {
+  const datos = { app: "AniLector", version: 1, fecha: new Date().toISOString(), datos: {} };
+  for (const k of CLAVES) {
+    const v = localStorage.getItem(k);
+    if (v != null) datos.datos[k] = v;
+  }
+  const blob = new Blob([JSON.stringify(datos, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const hoy = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `anilector-respaldo-${hoy}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast(t("backup.exported"));
+}
+
+export async function importarDatos(file) {
+  const texto = await file.text();
+  let d;
+  try { d = JSON.parse(texto); } catch { throw new Error(t("backup.badFile")); }
+  if (!d || d.app !== "AniLector" || !d.datos) throw new Error(t("backup.badFile"));
+
+  let n = 0;
+  for (const [k, v] of Object.entries(d.datos)) {
+    // Solo claves conocidas: un archivo manipulado no debe poder
+    // escribir cualquier cosa en el almacenamiento.
+    if (!CLAVES.includes(k)) continue;
+    try { localStorage.setItem(k, String(v)); n++; } catch (_) {}
+  }
+  if (!n) throw new Error(t("backup.empty"));
+  return n;
+}
+
+/* ---------- service worker ---------- */
+function registrarSW() {
+  if (!("serviceWorker" in navigator)) return;
+  // Solo con https (o localhost): el navegador no lo permite si no.
+  if (location.protocol !== "https:" && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+
+  // ¿Ya había un service worker al cargar la página? Es la diferencia
+  // entre "es la primera visita" y "acaba de llegar una versión nueva".
+  const habiaControlador = !!navigator.serviceWorker.controller;
+
+  navigator.serviceWorker.register("./sw.js").catch((e) =>
+    console.warn("Service worker:", e.message));
+
+  let recargando = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // En la PRIMERA instalación no se recarga: la página ya está bien y
+    // recargar de golpe se ve como un parpadeo raro nada más entrar.
+    // Solo se recarga cuando releva a una versión anterior, para que el
+    // HTML y el JS queden de la misma versión.
+    if (!habiaControlador || recargando) return;
+    recargando = true;
+    location.reload();
+  });
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.tipo === "sw-actualizado") toast(t("pwa.updated"));
+  });
+}
+
+/* ---------- botón de instalar ---------- */
+let promptInstalar = null;
+
+export function initPwa() {
+  registrarSW();
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    promptInstalar = e;
+    $("pwaInstallRow")?.classList.remove("hidden");
+  });
+  window.addEventListener("appinstalled", () => {
+    promptInstalar = null;
+    $("pwaInstallRow")?.classList.add("hidden");
+    toast(t("pwa.installed"));
+  });
+
+  $("pwaInstall")?.addEventListener("click", async () => {
+    if (!promptInstalar) return;
+    promptInstalar.prompt();
+    try { await promptInstalar.userChoice; } catch (_) {}
+    promptInstalar = null;
+    $("pwaInstallRow")?.classList.add("hidden");
+  });
+
+  $("backupExport")?.addEventListener("click", exportarDatos);
+  $("backupImport")?.addEventListener("change", async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const n = await importarDatos(f);
+      toast(t("backup.imported").replace("%s", n));
+      setTimeout(() => location.reload(), 1200);
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+}

@@ -51,6 +51,28 @@ Abre `http://localhost:8080`.
 2. En **Settings → Pages**, selecciona *Deploy from a branch*, rama `main`, carpeta `/ (root)`.
 3. Tu app quedará en `https://<tu-usuario>.github.io/<repo>/`.
 
+### ⚠️ Publicar una versión nueva: usa `publicar.ps1`
+
+```powershell
+.\publicar.ps1 "v4.0: lo que trae esta version"
+```
+
+Sube `VERSION` en `sw.js`, hace `add`, `commit`, `pull --rebase` y `push`, y se
+para si algo falla.
+
+**Por qué importa el número de versión.** El service worker guarda una copia de
+la app en el navegador. Ese número es lo único que le dice «esto ya no vale,
+bórralo y descárgalo otra vez». Si no cambia, el navegador sigue sirviendo la
+copia vieja y **los cambios no se ven nunca**, por mucho que el push haya
+funcionado. Peor aún: GitHub Pages cachea CSS y JS unos minutos por su cuenta,
+así que sin ese salto de versión puede cargarse un `index.html` nuevo junto a un
+`i18n.js` viejo y la interfaz sale rota (con textos crudos tipo `mnav.tv`). Ya
+pasó una vez; el service worker existe justamente para que no vuelva a pasar.
+
+Si prefieres hacerlo a mano, el orden es: **primero** editar `const VERSION` en
+`sw.js`, y después `git add -A`, `git commit -m "…"`, `git pull --rebase`,
+`git push`.
+
 ## 🧩 Fuentes de datos (gratuitas, sin llave)
 
 | Fuente | Uso |
