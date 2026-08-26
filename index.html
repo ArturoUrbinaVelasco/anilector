@@ -342,8 +342,11 @@
         <span id="viewerTitle" class="viewer-title">Documento</span>
         <div class="viewer-controls" id="viewerControls">
           <button id="vPrev" class="btn btn-ghost" title="Anterior">◀</button>
-          <span id="vPageInfo" class="page-info">–</span>
+          <span id="vPageInfo" class="page-info" title="Ir a una página">–</span>
           <button id="vNext" class="btn btn-ghost" title="Siguiente">▶</button>
+          <button id="vToc" class="btn btn-ghost" title="Índice" style="display:none">☰</button>
+          <button id="vType" class="btn btn-ghost" title="Tamaño de letra" style="display:none">🅰</button>
+          <button id="vTr" class="btn btn-ghost" title="Traducir" style="display:none">🌐</button>
           <button id="vZoomOut" class="btn btn-ghost" title="Alejar">➖</button>
           <button id="vZoomIn" class="btn btn-ghost" title="Acercar">➕</button>
         </div>
@@ -351,6 +354,13 @@
           <a id="vExternal" class="btn btn-ghost" target="_blank" rel="noopener" title="Abrir en pestaña nueva">↗</a>
           <button class="btn btn-ghost modal-close" data-close="viewerModal">✕</button>
         </div>
+        <!-- Paneles desplegables: índice, tipografía y traducción. Cuelgan
+             de la BARRA (no del cuerpo) por dos motivos: así no se borran
+             al pintar un documento nuevo, y así «debajo» significa debajo
+             de la barra y no debajo de todo el visor. -->
+        <div id="vTocPanel" class="viewer-pop viewer-toc hidden"></div>
+        <div id="vTypePanel" class="viewer-pop viewer-type hidden"></div>
+        <div id="vTrPanel" class="viewer-pop viewer-tr hidden"></div>
       </div>
       <div id="viewerBody" class="viewer-body"></div>
     </div>

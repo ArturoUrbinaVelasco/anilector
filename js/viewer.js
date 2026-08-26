@@ -9,6 +9,7 @@
    ============================================================ */
 import { t } from "./i18n.js";
 import { BACKEND_URL, NO_EMBED_SITES } from "./config.js";
+import * as TR from "./translate.js";
 
 const modal = () => document.getElementById("viewerModal");
 const body = () => document.getElementById("viewerBody");
@@ -24,13 +25,18 @@ const state = {
   zoom: 1.2,
   images: [],
   imgIndex: 0,
+  imgZoom: 1,        // zoom de las páginas de cómic (se conserva al pasar de página)
   epubRendition: null,
+  epubBook: null,
   mobiBook: null,
   archive: null,     // handle de libarchive abierto (hay que cerrarlo)
   webtoon: false,    // tira vertical en vez de página a página
   night: false,      // lectura nocturna (filtro cálido)
   blobUrls: new Set(),
   docKey: null,      // clave para recordar progreso
+  toc: [],           // índice del documento: [{ label, nivel, ir() }]
+  tipo: null,        // tipografía de lectura (tamaño / interlineado / ancho)
+  onScroll: null,    // handler de scroll del modo MOBI (hay que quitarlo al cerrar)
 };
 
 /* ---------- extensiones reconocidas ---------- */
@@ -80,9 +86,47 @@ const naturalSort = (a, b) => String(a).localeCompare(String(b), undefined, { nu
 function showLoader(msg) {
   body().innerHTML = `<div class="loader"><div class="spinner"></div><span>${esc(msg || t("misc.loading"))}</span></div>`;
 }
-function showError(msg, url) {
+/* `alReintentar` añade el botón de volver a intentar. La TV ya lo tenía
+   desde hace tiempo y el visor no: un fallo de red pasajero obligaba a
+   cerrar y volver a elegir el archivo. */
+function showError(msg, url, alReintentar) {
   body().innerHTML = `<div class="iframe-fallback"><p>⚠️ ${esc(msg)}</p>
-    ${url ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${esc(url)}">${t("reader.openTab")}</a>` : ""}</div>`;
+    <div class="err-actions">
+      ${alReintentar ? `<button class="btn btn-primary" id="vRetry">${t("reader.retry")}</button>` : ""}
+      ${url ? `<a class="btn ${alReintentar ? "btn-ghost" : "btn-primary"}" target="_blank" rel="noopener" href="${esc(url)}">${t("reader.openTab")}</a>` : ""}
+    </div></div>`;
+  if (alReintentar) document.getElementById("vRetry")?.addEventListener("click", () => alReintentar());
+}
+
+/* Un servidor que acepta la conexión y luego no contesta dejaba el
+   "Descargando el archivo…" girando indefinidamente: el visor era el
+   único módulo sin límite de espera (api.js y youtube.js ya lo tenían). */
+const ESPERA_MAX = 30000;
+
+/* Corta una promesa que puede no resolverse NUNCA. Hace falta porque hay
+   librerías que, ante un archivo que no es lo que dice ser, ni resuelven
+   ni fallan: se quedan esperando, y con ellas el visor. */
+function conLimite(promesa, ms = ESPERA_MAX) {
+  return new Promise((resolver, rechazar) => {
+    const reloj = setTimeout(() => rechazar(new Error(t("reader.timeout"))), ms);
+    promesa.then(
+      (v) => { clearTimeout(reloj); resolver(v); },
+      (e) => { clearTimeout(reloj); rechazar(e); },
+    );
+  });
+}
+
+async function fetchConLimite(url, opts = {}, ms = ESPERA_MAX) {
+  const ac = new AbortController();
+  const reloj = setTimeout(() => ac.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ac.signal });
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error(t("reader.timeout"));
+    throw e;
+  } finally {
+    clearTimeout(reloj);
+  }
 }
 
 /* Quita todo lo ejecutable de un HTML de terceros (MOBI / Markdown). */
@@ -133,6 +177,213 @@ function saveProgress(key, value) {
   } catch (_) {}
 }
 
+/* ---------- tipografía de lectura ----------
+   Los botones ➖/➕ solo cambiaban el tamaño, y en EPUB no hacían nada
+   porque zoomBy() no tenía rama para ese modo. Aquí vive el ajuste
+   completo (tamaño, interlineado y ancho de columna), compartido por
+   EPUB, MOBI, Markdown y texto, y recordado entre sesiones. */
+const TIPO_DEF = { size: 1, lh: 1.6, width: 42 };   // rem · veces · caracteres
+const TIPO_LIM = { size: [0.6, 2.5], lh: [1.1, 2.4], width: [24, 90] };
+const MODOS_TEXTO = ["epub", "mobi", "html", "text"];
+
+function acotar(v, [min, max], porDefecto) {
+  const n = parseFloat(v);
+  return isNaN(n) ? porDefecto : Math.min(max, Math.max(min, n));
+}
+function leerTipo() {
+  try {
+    const v = JSON.parse(localStorage.getItem("anilector.readType") || "{}");
+    return {
+      size: acotar(v.size, TIPO_LIM.size, TIPO_DEF.size),
+      lh: acotar(v.lh, TIPO_LIM.lh, TIPO_DEF.lh),
+      width: acotar(v.width, TIPO_LIM.width, TIPO_DEF.width),
+    };
+  } catch { return { ...TIPO_DEF }; }
+}
+function guardarTipo() {
+  try { localStorage.setItem("anilector.readType", JSON.stringify(state.tipo)); } catch (_) {}
+}
+function aplicarTipo() {
+  if (!state.tipo) state.tipo = leerTipo();
+  const { size, lh, width } = state.tipo;
+  // El EPUB se pinta dentro de un iframe propio: los estilos hay que
+  // inyectarlos por la API de epub.js, no tocando el DOM de fuera.
+  if (state.mode === "epub" && state.epubRendition) {
+    try {
+      state.epubRendition.themes.fontSize(`${Math.round(size * 100)}%`);
+      state.epubRendition.themes.override("line-height", String(lh));
+    } catch (_) {}
+    return;
+  }
+  const doc = body().querySelector(".ebook-doc, .text-doc");
+  if (!doc) return;
+  doc.style.fontSize = `${size}rem`;
+  doc.style.lineHeight = String(lh);
+  // El ancho de columna no aplica al EPUB (lo pagina epub.js por su cuenta).
+  doc.style.maxWidth = `${width}ch`;
+  doc.style.marginInline = "auto";
+}
+function cambiarTipo(campo, delta) {
+  if (!state.tipo) state.tipo = leerTipo();
+  const paso = { size: 0.1, lh: 0.1, width: 4 }[campo];
+  state.tipo[campo] = acotar(state.tipo[campo] + delta * paso, TIPO_LIM[campo], TIPO_DEF[campo]);
+  // Redondeo para que no se acumulen decimales feos al pulsar muchas veces.
+  state.tipo[campo] = Math.round(state.tipo[campo] * 100) / 100;
+  guardarTipo();
+  aplicarTipo();
+  pintarPanelTipo();
+}
+
+const PANELES = ["vTocPanel", "vTypePanel", "vTrPanel"];
+function cerrarPaneles(salvo) {
+  for (const id of PANELES) {
+    if (id !== salvo) document.getElementById(id)?.classList.add("hidden");
+  }
+}
+function pintarPanelTipo() {
+  const panel = document.getElementById("vTypePanel");
+  if (!panel || panel.classList.contains("hidden")) return;
+  if (!state.tipo) state.tipo = leerTipo();
+  const esEpub = state.mode === "epub";
+  const fila = (campo, etiqueta, valor) => `
+    <div class="tipo-fila">
+      <span class="tipo-nombre">${etiqueta}</span>
+      <button class="btn btn-ghost" data-tipo="${campo}" data-d="-1" aria-label="${etiqueta} −">−</button>
+      <span class="tipo-valor">${valor}</span>
+      <button class="btn btn-ghost" data-tipo="${campo}" data-d="1" aria-label="${etiqueta} +">+</button>
+    </div>`;
+  panel.innerHTML =
+    fila("size", t("reader.typeSize"), `${Math.round(state.tipo.size * 100)}%`) +
+    fila("lh", t("reader.typeLine"), state.tipo.lh.toFixed(1)) +
+    (esEpub ? "" : fila("width", t("reader.typeWidth"), `${Math.round(state.tipo.width)}`)) +
+    `<button class="btn btn-ghost tipo-reset" id="vTypeReset">${t("reader.typeReset")}</button>`;
+}
+function alternarPanelTipo() {
+  const panel = document.getElementById("vTypePanel");
+  if (!panel) return;
+  const abierto = !panel.classList.contains("hidden");
+  cerrarPaneles("vTypePanel");
+  panel.classList.toggle("hidden", abierto);
+  if (!abierto) pintarPanelTipo();
+}
+
+/* ---------- traducción del texto que estás leyendo ----------
+   La lógica vive en translate.js; aquí solo van las raíces del documento
+   y el panel. El EPUB se pinta dentro de un iframe propio, así que sus
+   raíces se piden a epub.js en vez de buscarlas en el DOM de fuera. */
+function raicesTexto() {
+  if (state.mode === "epub" && state.epubRendition) {
+    try {
+      return (state.epubRendition.getContents() || [])
+        .map((c) => c.content || c.document?.body)
+        .filter(Boolean);
+    } catch (_) { return []; }
+  }
+  const doc = body().querySelector(".ebook-doc, .text-doc");
+  return doc ? [doc] : [];
+}
+function ajustarBotonTr() {
+  const b = document.getElementById("vTr");
+  if (b) b.style.display = MODOS_TEXTO.includes(state.mode) ? "" : "none";
+}
+function estadoTr(msg) {
+  const el = document.getElementById("vTrEstado");
+  if (el) el.textContent = msg || "";
+}
+/* Si el navegador ni siquiera tiene las APIs, se dice de entrada. Si las
+   tiene, se ofrece el botón: saber si de verdad funcionan exige probar, y
+   esa prueba (la detección) es justo el primer paso de traducir. */
+function pintarPanelTr() {
+  const panel = document.getElementById("vTrPanel");
+  if (!panel || panel.classList.contains("hidden")) return;
+  if (!TR.hayTraductor()) {
+    panel.innerHTML = `<p class="tr-aviso">${esc(t("reader.trNoApi"))}</p>`;
+    return;
+  }
+  const destino = TR.idiomaDestino();
+  panel.innerHTML = `
+    <div class="tipo-fila">
+      <span class="tipo-nombre">${t("reader.trTarget")}</span>
+      <select id="vTrLang" class="tr-select">
+        ${TR.DESTINOS.map((c) =>
+          `<option value="${c}"${c === destino ? " selected" : ""}>${esc(TR.nombreIdioma(c))}</option>`).join("")}
+      </select>
+    </div>
+    <button class="btn btn-primary tr-accion" id="vTrGo">
+      ${state.trOn ? t("reader.trOriginal") : t("reader.translate")}
+    </button>
+    <p class="tr-estado" id="vTrEstado"></p>`;
+}
+function alternarPanelTr() {
+  const panel = document.getElementById("vTrPanel");
+  if (!panel) return;
+  const abierto = !panel.classList.contains("hidden");
+  cerrarPaneles("vTrPanel");
+  panel.classList.toggle("hidden", abierto);
+  if (!abierto) pintarPanelTr();
+}
+
+async function traducirDocumento() {
+  const raices = raicesTexto();
+  if (!raices.length) return estadoTr(t("reader.trFailed"));
+  const destino = document.getElementById("vTrLang")?.value || TR.idiomaDestino();
+  TR.guardarDestino(destino);
+
+  try {
+    estadoTr(t("reader.trDetecting"));
+    // La detección va primero también porque es la llamada segura: si el
+    // navegador no trae los modelos, falla aquí con un mensaje claro y
+    // no se llega a tocar el traductor (ver el comentario de translate.js).
+    const origen = await TR.detectarIdioma(TR.muestraDeTexto(raices));
+    if (!origen) return estadoTr(t("reader.trUnknown"));
+    if (origen === destino) {
+      return estadoTr(t("reader.trSame").replace("%s", TR.nombreIdioma(destino)));
+    }
+
+    estadoTr(t("reader.trWorking"));
+    await TR.traducir(raices, { origen, destino, onEstado: estadoTr });
+    state.trOn = true;
+    state.trPar = { origen, destino };
+    estadoTr(t("reader.trDone")
+      .replace("%s", TR.nombreIdioma(origen)).replace("%s", TR.nombreIdioma(destino)));
+    const b = document.getElementById("vTrGo");
+    if (b) b.textContent = t("reader.trOriginal");
+    const btn = document.getElementById("vTr");
+    if (btn) btn.classList.add("activo");
+  } catch (e) {
+    estadoTr(e.message || t("reader.trFailed"));
+  }
+}
+function volverAlOriginal() {
+  TR.restaurar(raicesTexto());
+  state.trOn = false;
+  state.trPar = null;
+  estadoTr("");
+  const b = document.getElementById("vTrGo");
+  if (b) b.textContent = t("reader.translate");
+  document.getElementById("vTr")?.classList.remove("activo");
+}
+
+/* ---------- índice (tabla de contenidos) ----------
+   `items` = [{ label, nivel, ir() }]. Cada formato lo construye a su
+   manera (epub.js, pdf.js y foliate lo exponen) y aquí se pinta igual. */
+function ponerIndice(items) {
+  state.toc = (items || []).filter((i) => i && i.label);
+  const btn = document.getElementById("vToc");
+  if (btn) btn.style.display = state.toc.length ? "" : "none";
+}
+function alternarPanelIndice() {
+  const panel = document.getElementById("vTocPanel");
+  if (!panel) return;
+  const abierto = !panel.classList.contains("hidden");
+  cerrarPaneles("vTocPanel");
+  panel.classList.toggle("hidden", abierto);
+  if (abierto) return;
+  panel.innerHTML = `<ol class="toc-lista">` + state.toc.map((it, i) =>
+    `<li><button class="toc-item" data-i="${i}" style="padding-left:${0.6 + (it.nivel || 0) * 0.9}rem">${esc(it.label)}</button></li>`
+  ).join("") + `</ol>`;
+}
+
 /* ---------- apertura / cierre ---------- */
 function openModal(title, { showControls = true, external = null } = {}) {
   titleEl().textContent = title;
@@ -143,10 +394,26 @@ function openModal(title, { showControls = true, external = null } = {}) {
   document.getElementById("vNext").style.display = "";
   if (external) { extLink().href = external; extLink().style.display = ""; }
   else extLink().style.display = "none";
+  // Cada documento empieza sin índice y con los paneles cerrados. El botón
+  // de tipografía lo vuelve a encender quien tenga texto que fluya.
+  cerrarPaneles();
+  ponerIndice([]);
+  for (const id of ["vType", "vTr"]) {
+    const b = document.getElementById(id);
+    if (b) { b.style.display = "none"; b.classList.remove("activo"); }
+  }
+  state.trOn = false;
+  state.trPar = null;
+  state.tipo = leerTipo();
   body().innerHTML = "";
   body().scrollTop = 0;
   modal().classList.remove("hidden");
   document.body.style.overflow = "hidden";
+}
+/* El botón de tipografía solo tiene sentido donde hay texto que fluye. */
+function ajustarBotonTipo() {
+  const b = document.getElementById("vType");
+  if (b) b.style.display = MODOS_TEXTO.includes(state.mode) ? "" : "none";
 }
 export function closeViewer() {
   modal().classList.add("hidden");
@@ -155,14 +422,17 @@ export function closeViewer() {
   if (state.mobiBook?.destroy) { try { state.mobiBook.destroy(); } catch (_) {} }
   if (state.archive?.close) { try { state.archive.close(); } catch (_) {} }
   if (state.pdf?.destroy) { try { state.pdf.destroy(); } catch (_) {} }
+  if (state.onScroll) { body().removeEventListener("scroll", state.onScroll); state.onScroll = null; }
   revokeAll();
   document.getElementById("vWebtoon")?.remove();
   document.getElementById("vSave")?.remove();
   document.getElementById("vNight")?.remove();
   body().classList.remove("night");
+  cerrarPaneles();
+  ponerIndice([]);
   Object.assign(state, {
-    mode: null, pdf: null, images: [], imgIndex: 0,
-    epubRendition: null, mobiBook: null, archive: null, docKey: null,
+    mode: null, pdf: null, images: [], imgIndex: 0, imgZoom: 1,
+    epubRendition: null, epubBook: null, mobiBook: null, archive: null, docKey: null,
   });
   body().innerHTML = "";
 }
@@ -200,7 +470,7 @@ export async function openPdf(source, title) {
       state.pdf = await load(await source.arrayBuffer());
     }
   } catch (e) {
-    return showError(e.message, isUrl ? source : null);
+    return showError(e.message, isUrl ? source : null, () => openPdf(source, title));
   }
 
   state.page = progress()[state.docKey]?.page || 1;
@@ -210,7 +480,45 @@ export async function openPdf(source, title) {
   const canvas = document.createElement("canvas");
   canvas.id = "pdfCanvas";
   body().appendChild(canvas);
+  ajustarBotonTipo();
   await renderPdfPage();
+  await indicePdf();
+}
+
+/* Índice del PDF. `dest` puede venir como nombre (string) o como array
+   cuyo primer elemento es la referencia de la página; pdf.js resuelve
+   ambos, pero hay que pedírselo explícitamente. */
+async function indicePdf() {
+  let esquema = null;
+  try { esquema = await state.pdf.getOutline(); } catch (_) { return; }
+  if (!esquema?.length) return;
+
+  const aPagina = async (dest) => {
+    try {
+      const d = typeof dest === "string" ? await state.pdf.getDestination(dest) : dest;
+      if (!Array.isArray(d) || !d[0]) return null;
+      return (await state.pdf.getPageIndex(d[0])) + 1;
+    } catch (_) { return null; }
+  };
+
+  const plano = [];
+  const aplanar = (arr, nivel) => {
+    for (const it of arr || []) {
+      plano.push({
+        label: (it.title || "").trim(),
+        nivel,
+        ir: async () => {
+          const n = await aPagina(it.dest);
+          if (!n) return;
+          state.page = Math.min(Math.max(1, n), state.pdf.numPages);
+          renderPdfPage();
+        },
+      });
+      if (it.items?.length) aplanar(it.items, nivel + 1);
+    }
+  };
+  aplanar(esquema, 0);
+  ponerIndice(plano);
 }
 
 async function renderPdfPage() {
@@ -231,14 +539,47 @@ export async function openEpub(file, title) {
   openModal(title || file.name);
   state.mode = "epub";
   state.docKey = `epub:${file.name}`;
-  const area = document.createElement("div");
-  area.id = "epubArea";
-  body().appendChild(area);
-  const book = window.ePub(await file.arrayBuffer());
-  const rendition = book.renderTo("epubArea", { width: "100%", height: "100%", flow: "paginated" });
-  state.epubRendition = rendition;
-  const saved = progress()[state.docKey]?.cfi;
-  await rendition.display(saved || undefined);
+  // Un EPUB grande tarda en analizarse: sin esto se veía el visor en
+  // blanco, sin explicación, hasta que aparecía la primera página.
+  showLoader();
+
+  let book, rendition;
+  try {
+    book = window.ePub(await file.arrayBuffer());
+    // El área se monta bajo el cargador (no en su lugar): si esto falla,
+    // showError la sustituye y no queda un visor vacío.
+    const area = document.createElement("div");
+    area.id = "epubArea";
+    area.style.visibility = "hidden";
+    body().appendChild(area);
+    rendition = book.renderTo("epubArea", { width: "100%", height: "100%", flow: "paginated" });
+    state.epubBook = book;
+    state.epubRendition = rendition;
+    // Con un archivo que no es un EPUB, epub.js no lanza: se queda
+    // esperando para siempre y el visor se quedaba en blanco sin decir
+    // nada. Por eso hay límite de tiempo, no solo try/catch.
+    book.opened?.catch?.(() => {});
+    const saved = progress()[state.docKey]?.cfi;
+    const mostrar = async () => {
+      // Si el punto guardado ya no existe (el archivo cambió), no se
+      // pierde el libro entero: se abre por el principio.
+      try { await rendition.display(saved || undefined); }
+      catch (_) { await rendition.display(); }
+    };
+    await conLimite(mostrar(), 20000);
+    body().querySelector(".loader")?.remove();
+    area.style.visibility = "";
+  } catch (e) {
+    // Antes esto reventaba hacia arriba y dejaba el visor abierto y vacío.
+    try { rendition?.destroy?.(); } catch (_) {}
+    state.epubRendition = null;
+    state.epubBook = null;
+    return showError(`${t("reader.epubFailed")} (${e.message})`, null, () => openEpub(file, title));
+  }
+
+  ajustarBotonTipo();
+  ajustarBotonTr();
+  aplicarTipo();
   rendition.on("relocated", (loc) => {
     saveProgress(state.docKey, { cfi: loc.start.cfi });
     const pct = book.locations?.percentageFromCfi
@@ -247,6 +588,30 @@ export async function openEpub(file, title) {
     pageInfo().textContent = pct != null && !isNaN(pct) ? `${pct}%` : "…";
   });
   book.ready.then(() => book.locations.generate(1000)).catch(() => {});
+
+  // Al pasar de página, epub.js pinta la sección en un iframe nuevo y la
+  // traducción se quedaría atrás. Si estaba activa, se vuelve a aplicar.
+  rendition.on("rendered", () => {
+    if (!state.trOn || !state.trPar) return;
+    TR.traducir(raicesTexto(), { ...state.trPar }).catch(() => {});
+  });
+
+  // Índice: epub.js ya lo tenía cargado y no se usaba.
+  book.loaded?.navigation?.then((nav) => {
+    const plano = [];
+    const aplanar = (arr, nivel) => {
+      for (const it of arr || []) {
+        plano.push({
+          label: (it.label || "").trim(),
+          nivel,
+          ir: () => { try { rendition.display(it.href); } catch (_) {} },
+        });
+        if (it.subitems?.length) aplanar(it.subitems, nivel + 1);
+      }
+    };
+    aplanar(nav?.toc, 0);
+    ponerIndice(plano);
+  }).catch(() => {});
 }
 
 /* ---------- MOBI / AZW3 (Kindle) ---------- */
@@ -296,6 +661,7 @@ export async function openMobi(file, title) {
         const html = await (await fetch(url)).text();
         const frag = document.createElement("section");
         frag.className = "ebook-section";
+        frag.dataset.sec = loaded;          // para el índice y para retomar
         frag.innerHTML = sanitizeHTML(html);
         doc.insertBefore(frag, sentinel);
       } catch (e) {
@@ -307,6 +673,22 @@ export async function openMobi(file, title) {
     if (loaded >= sections.length) sentinel.remove();
     busy = false;
   }
+  /* Saltar a una sección exige haber cargado las anteriores (el documento
+     es una tira continua). Se cargan en tandas grandes para que un salto
+     al capítulo 30 no sean 30 vueltas. */
+  async function loadUntil(i) {
+    let vueltas = 0;
+    while (loaded <= i && loaded < sections.length && vueltas++ < 200) {
+      while (busy) await new Promise((r) => setTimeout(r, 30));
+      await loadNext(Math.max(4, Math.min(20, i - loaded + 1)));
+    }
+  }
+  async function irASeccion(i) {
+    if (!(i >= 0)) return;
+    await loadUntil(i);
+    doc.querySelector(`.ebook-section[data-sec="${i}"]`)?.scrollIntoView({ block: "start" });
+  }
+
   const io = new IntersectionObserver((ents) => {
     if (ents.some((e) => e.isIntersecting)) loadNext(2);
   }, { root: body(), rootMargin: "600px" });
@@ -314,13 +696,82 @@ export async function openMobi(file, title) {
   controls().style.display = "";
   document.getElementById("vPrev").style.display = "none";
   document.getElementById("vNext").style.display = "none";
+  ajustarBotonTipo();
+  ajustarBotonTr();
   await loadNext(3);
+  aplicarTipo();
+
+  /* Recordar por dónde vas. El modo MOBI preparaba la clave del progreso
+     y NUNCA la guardaba: un libro de 500 páginas se reabría siempre por
+     el principio. Se guarda la sección visible arriba y el desplazamiento
+     dentro de ella. */
+  const guardarSitio = () => {
+    const cajas = doc.querySelectorAll(".ebook-section");
+    let sec = 0, off = 0;
+    for (const c of cajas) {
+      if (c.offsetTop <= body().scrollTop + 4) {
+        sec = Number(c.dataset.sec) || 0;
+        off = body().scrollTop - c.offsetTop;
+      } else break;
+    }
+    saveProgress(state.docKey, { sec, off: Math.round(off) });
+  };
+  let reloj = null;
+  state.onScroll = () => { clearTimeout(reloj); reloj = setTimeout(guardarSitio, 400); };
+  body().addEventListener("scroll", state.onScroll);
+
+  // Índice: foliate expone book.toc y resolveHref() → { index } de sección.
+  try {
+    const plano = [];
+    const aplanar = (arr, nivel) => {
+      for (const it of arr || []) {
+        plano.push({
+          label: (it.label || "").trim(),
+          nivel,
+          ir: async () => {
+            try {
+              const r = await book.resolveHref(it.href);
+              if (r && r.index >= 0) await irASeccion(r.index);
+            } catch (_) {}
+          },
+        });
+        if (it.subitems?.length) aplanar(it.subitems, nivel + 1);
+      }
+    };
+    aplanar(book.toc, 0);
+    ponerIndice(plano);
+  } catch (_) {}
+
+  // Retomar donde se quedó (después de montar todo lo anterior).
+  const guardado = progress()[state.docKey];
+  if (guardado?.sec > 0 || guardado?.off > 0) {
+    showLoaderFlotante();
+    await irASeccion(guardado.sec || 0);
+    const caja = doc.querySelector(`.ebook-section[data-sec="${guardado.sec || 0}"]`);
+    if (caja) body().scrollTop = caja.offsetTop + (guardado.off || 0);
+    quitarLoaderFlotante();
+  }
+}
+
+/* Aviso discreto mientras se cargan las secciones de un salto largo:
+   el documento ya está en pantalla, así que no se puede usar showLoader
+   (borraría lo cargado). */
+function showLoaderFlotante() {
+  quitarLoaderFlotante();
+  const el = document.createElement("div");
+  el.id = "vJumping";
+  el.className = "jump-toast";
+  el.textContent = t("reader.jumping");
+  body().appendChild(el);
+}
+function quitarLoaderFlotante() {
+  document.getElementById("vJumping")?.remove();
 }
 
 /* ---------- Markdown ---------- */
 let markedMod = null;
 export async function openMarkdown(file, title) {
-  openModal(title || file.name, { showControls: false });
+  openModal(title || file.name);
   showLoader();
   state.mode = "html";
   try {
@@ -328,6 +779,7 @@ export async function openMarkdown(file, title) {
     const src = await readTextSmart(file);
     const html = markedMod.marked.parse(src, { async: false, breaks: false, gfm: true });
     body().innerHTML = `<div class="ebook-doc markdown-doc">${sanitizeHTML(html)}</div>`;
+    soloLectura();
   } catch (e) {
     // Si marked falla por lo que sea, al menos mostramos el texto crudo.
     console.warn("Markdown:", e.message);
@@ -344,6 +796,7 @@ export async function openImages(pages, title) {
   state.mode = "images";
   state.docKey = `img:${title}`;
   state.images = pages;
+  state.imgZoom = 1;
   state.imgIndex = Math.min(progress()[state.docKey]?.index || 0, Math.max(0, pages.length - 1));
   try { state.webtoon = localStorage.getItem("anilector.webtoon") === "1"; } catch (_) { state.webtoon = false; }
   addWebtoonToggle();
@@ -533,6 +986,7 @@ async function renderImage() {
     if (state.imgIndex !== idx || state.mode !== "images") return; // el usuario ya pasó de página
     img.src = url;
     img.style.display = "";
+    aplicarZoomImagen();
     body().querySelector(".page-error")?.remove();
   } catch (e) {
     console.warn("Página:", e.message);
@@ -789,13 +1243,27 @@ function addArchiveBrowserButton(entries, title) {
 
 /* ---------- Texto ---------- */
 export async function openText(file, title) {
-  openModal(title || file.name, { showControls: false });
+  openModal(title || file.name);
   state.mode = "text";
   const div = document.createElement("div");
   div.className = "text-doc";
   div.textContent = await readTextSmart(file);
   body().innerHTML = "";
   body().appendChild(div);
+  soloLectura();
+}
+
+/* Documento de una sola tira: no hay páginas que pasar, pero sí tamaño de
+   letra que ajustar. Antes se ocultaba la barra entera y por eso los
+   ➖/➕ nunca llegaban a usarse en texto ni en Markdown. */
+function soloLectura() {
+  controls().style.display = "";
+  document.getElementById("vPrev").style.display = "none";
+  document.getElementById("vNext").style.display = "none";
+  pageInfo().textContent = "";
+  ajustarBotonTipo();
+  ajustarBotonTr();
+  aplicarTipo();
 }
 
 /* ¿Este sitio prohíbe mostrarse dentro de otra página? */
@@ -1038,8 +1506,9 @@ export async function openRemoteFile(url, title, { fileName = null } = {}) {
   openModal(title || url, { showControls: false, external: url });
   showLoader(t("reader.downloading"));
 
+  const reintentar = () => openRemoteFile(url, title, { fileName });
   const fetchWith = async (target) => {
-    const res = await fetch(target, { redirect: "follow" });
+    const res = await fetchConLimite(target, { redirect: "follow" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res;
   };
@@ -1049,9 +1518,9 @@ export async function openRemoteFile(url, title, { fileName = null } = {}) {
     res = await fetchWith(url);                     // directo (si el servidor manda CORS)
   } catch (e1) {
     const prox = proxiedUrl(url);
-    if (!prox) return showError(t("reader.corsBlocked"), url);
+    if (!prox) return showError(t("reader.corsBlocked"), url, reintentar);
     try { res = await fetchWith(prox); }
-    catch (e2) { return showError(`${t("reader.downloadFailed")} (${e2.message})`, url); }
+    catch (e2) { return showError(`${t("reader.downloadFailed")} (${e2.message})`, url, reintentar); }
   }
 
   // Si nos devolvieron una página HTML, no era un archivo directo.
@@ -1067,7 +1536,7 @@ export async function openRemoteFile(url, title, { fileName = null } = {}) {
       decodeURIComponent((url.split(/[?#]/)[0].split("/").pop() || "archivo"));
     return await openLocalFile(new File([blob], name, { type: blob.type }));
   } catch (e) {
-    return showError(`${t("reader.downloadFailed")} (${e.message})`, url);
+    return showError(`${t("reader.downloadFailed")} (${e.message})`, url, reintentar);
   }
 }
 
@@ -1077,13 +1546,85 @@ export function bindViewerControls() {
   document.getElementById("vNext").addEventListener("click", () => nav(1));
   document.getElementById("vZoomIn").addEventListener("click", () => zoomBy(0.2));
   document.getElementById("vZoomOut").addEventListener("click", () => zoomBy(-0.2));
+  document.getElementById("vToc")?.addEventListener("click", alternarPanelIndice);
+  document.getElementById("vType")?.addEventListener("click", alternarPanelTipo);
+  document.getElementById("vTr")?.addEventListener("click", alternarPanelTr);
+  document.getElementById("vTrPanel")?.addEventListener("click", (e) => {
+    if (e.target.id !== "vTrGo") return;
+    if (state.trOn) volverAlOriginal();
+    else traducirDocumento();
+  });
+
+  // Saltar a una página escribiendo el número (PDF y cómics).
+  pageInfo().addEventListener("click", pedirPagina);
+
+  document.getElementById("vTocPanel")?.addEventListener("click", (e) => {
+    const b = e.target.closest(".toc-item");
+    if (!b) return;
+    cerrarPaneles();
+    state.toc[Number(b.dataset.i)]?.ir();
+  });
+  document.getElementById("vTypePanel")?.addEventListener("click", (e) => {
+    if (e.target.id === "vTypeReset") {
+      state.tipo = { ...TIPO_DEF };
+      guardarTipo(); aplicarTipo(); pintarPanelTipo();
+      return;
+    }
+    const b = e.target.closest("[data-tipo]");
+    if (b) cambiarTipo(b.dataset.tipo, Number(b.dataset.d));
+  });
+
   document.addEventListener("keydown", (e) => {
     if (modal().classList.contains("hidden")) return;
     if (e.target.matches("input, textarea")) return;   // no robar teclas al campo de contraseña
     if (e.key === "ArrowLeft") nav(-1);
     if (e.key === "ArrowRight") nav(1);
-    if (e.key === "Escape") closeViewer();
+    if (e.key === "Escape") {
+      // Primero cierra el panel abierto; solo si no hay ninguno, el visor.
+      const abierto = ["vTocPanel", "vTypePanel"]
+        .some((id) => !document.getElementById(id)?.classList.contains("hidden"));
+      if (abierto) cerrarPaneles();
+      else closeViewer();
+    }
   });
+}
+
+/* Escribir el número de página en vez de pulsar ▶ cien veces. */
+function pedirPagina() {
+  const total = state.mode === "pdf" ? state.pdf?.numPages
+    : state.mode === "images" ? state.images.length : 0;
+  if (!total || pageInfo().querySelector("input")) return;
+  const actual = state.mode === "pdf" ? state.page : state.imgIndex + 1;
+  const previo = pageInfo().textContent;
+  pageInfo().innerHTML =
+    `<input id="vGoto" class="goto-input" type="number" min="1" max="${total}" value="${actual}" />`;
+  const inp = document.getElementById("vGoto");
+  inp.focus();
+  inp.select();
+
+  let cerrado = false;
+  const cerrar = (aplicar) => {
+    if (cerrado) return;
+    cerrado = true;
+    const n = Math.min(total, Math.max(1, parseInt(inp.value, 10) || actual));
+    pageInfo().textContent = previo;
+    if (!aplicar || n === actual) return;
+    if (state.mode === "pdf") { state.page = n; renderPdfPage(); }
+    else {
+      state.imgIndex = n - 1;
+      if (state.webtoon) {
+        document.querySelector(`.webtoon-page[data-i="${n - 1}"]`)?.scrollIntoView({ block: "start" });
+        pageInfo().textContent = `${n} / ${total}`;
+        saveProgress(state.docKey, { index: n - 1 });
+      } else renderImage();
+    }
+  };
+  inp.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") cerrar(true);
+    if (e.key === "Escape") cerrar(false);
+  });
+  inp.addEventListener("blur", () => cerrar(true));
 }
 function nav(dir) {
   if (state.mode === "pdf" && state.pdf) {
@@ -1107,19 +1648,20 @@ function zoomBy(d) {
     state.zoom = Math.min(3, Math.max(0.4, state.zoom + d));
     renderPdfPage();
   } else if (state.mode === "images") {
-    const img = body().querySelector("img.page-img");
-    if (!img) return;
-    const cur = parseFloat(img.dataset.zoom || "1");
-    const z = Math.min(3, Math.max(0.4, cur + d));
-    img.dataset.zoom = z;
-    img.style.maxWidth = `${z * 100}%`;
-    img.style.maxHeight = z === 1 ? "100%" : "none";
-  } else if (state.mode === "mobi" || state.mode === "html" || state.mode === "text") {
-    const doc = body().querySelector(".ebook-doc, .text-doc");
-    if (!doc) return;
-    const cur = parseFloat(doc.dataset.zoom || "1");
-    const z = Math.min(2.5, Math.max(0.6, cur + d));
-    doc.dataset.zoom = z;
-    doc.style.fontSize = `${z}rem`;
+    // El zoom vive en el estado, no en el <img>: antes se perdía en cuanto
+    // pasabas de página, porque renderImage() crea el elemento de nuevo.
+    state.imgZoom = Math.min(3, Math.max(0.4, state.imgZoom + d));
+    aplicarZoomImagen();
+  } else if (MODOS_TEXTO.includes(state.mode)) {
+    // Los ➖/➕ mueven el tamaño de la tipografía, EPUB incluido (antes esta
+    // rama no existía para EPUB y los botones no hacían nada).
+    cambiarTipo("size", d > 0 ? 1 : -1);
   }
+}
+function aplicarZoomImagen() {
+  const img = body().querySelector("img.page-img");
+  if (!img) return;
+  const z = state.imgZoom;
+  img.style.maxWidth = `${z * 100}%`;
+  img.style.maxHeight = z === 1 ? "100%" : "none";
 }

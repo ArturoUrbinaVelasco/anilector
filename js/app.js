@@ -51,10 +51,21 @@ function lib() {
   try { return JSON.parse(localStorage.getItem("anilector.library") || "[]"); }
   catch { return []; }
 }
-function saveLib(list) {
-  localStorage.setItem("anilector.library", JSON.stringify(list));
-  window.dispatchEvent(new Event("anilector:datachanged"));
+/* El navegador da ~5 MB para todo. Si se llena, `setItem` LANZA: antes
+   eso rompía la acción sin decir nada y el usuario creía que había
+   guardado. Ahora se avisa y se le dice qué hacer. */
+function guardarClave(clave, valor) {
+  try {
+    localStorage.setItem(clave, JSON.stringify(valor));
+    window.dispatchEvent(new Event("anilector:datachanged"));
+    return true;
+  } catch (e) {
+    console.warn("localStorage:", e.name);
+    toast(e.name === "QuotaExceededError" ? t("misc.storageFull") : t("misc.saveFailed"));
+    return false;
+  }
 }
+function saveLib(list) { return guardarClave("anilector.library", list); }
 function inLib(id) { return lib().some((x) => x.id === id); }
 function toggleLib(item) {
   const list = lib();
@@ -78,10 +89,7 @@ function seenStore() {
   try { return JSON.parse(localStorage.getItem("anilector.seen") || "{}"); }
   catch { return {}; }
 }
-function saveSeen(store) {
-  localStorage.setItem("anilector.seen", JSON.stringify(store));
-  window.dispatchEvent(new Event("anilector:datachanged"));
-}
+function saveSeen(store) { return guardarClave("anilector.seen", store); }
 // kind: "ep" (episodio) | "ch" (capítulo)
 function markSeen(item, kind, n, on = true) {
   const store = seenStore();
@@ -778,9 +786,14 @@ function renderRecent() {
   let recent;
   try { recent = JSON.parse(localStorage.getItem("anilector.recent") || "[]"); }
   catch { recent = []; }
+  /* Los enlaces se pueden volver a abrir; los archivos de tu equipo NO:
+     el navegador no puede reabrir un archivo del disco por su nombre, hay
+     que volver a elegirlo. Por eso unos son botones y los otros no. */
   $("recentFiles").innerHTML = recent.length
     ? `<small>${t("reader.recent")}</small>` +
-      recent.map((r) => `<div class="recent-file">📄 ${esc(r)}</div>`).join("")
+      recent.map((r) => /^https?:\/\//i.test(r)
+        ? `<button class="recent-file recent-link" data-url="${esc(r)}" title="${t("reader.open")}">🔗 ${esc(r)}</button>`
+        : `<div class="recent-file" title="${t("reader.recentLocal")}">📄 ${esc(r)}</div>`).join("")
     : "";
 }
 function pushRecent(name) {
@@ -916,6 +929,13 @@ function bindEvents() {
     e.preventDefault();
     const url = $("urlInput").value.trim();
     if (url) { openUrl(url); pushRecent(url); }
+  });
+  // Reabrir un enlace reciente con un clic (antes la lista era decorativa).
+  $("recentFiles").addEventListener("click", (e) => {
+    const b = e.target.closest(".recent-link");
+    if (!b) return;
+    openUrl(b.dataset.url);
+    pushRecent(b.dataset.url);
   });
 
   // idioma y tema (los selectores del encabezado y los de la hoja «Más»

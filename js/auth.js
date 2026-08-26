@@ -13,7 +13,12 @@ import { GOOGLE_CLIENT_ID } from "./config.js";
 const SCOPES =
   "openid email profile https://www.googleapis.com/auth/drive.appdata";
 const FILE_NAME = "anilector-datos.json";
-const KEYS = ["anilector.library", "anilector.progress", "anilector.recent", "anilector.seen", "anilector.sites", "anilector.tvfavs", "anilector.brand"];
+/* Lo que viaja a Drive son DATOS tuyos, no preferencias del aparato: las
+   listas M3U propias sí (cuestan de rehacer), pero el modo TV o el
+   nocturno no — sincronizarlos encendería el mando a distancia en el
+   móvil solo porque lo usaste en el televisor. Esos van solo al respaldo
+   en archivo (pwa.js). */
+const KEYS = ["anilector.library", "anilector.progress", "anilector.recent", "anilector.seen", "anilector.sites", "anilector.tvfavs", "anilector.brand", "anilector.tvcustom"];
 
 let tokenClient = null;
 let accessToken = null;
@@ -134,6 +139,7 @@ function collectLocal() {
     sites: readKey(KEYS[4]) || [],
     tvfavs: readKey(KEYS[5]) || [],
     brand: readKey(KEYS[6]) || null,
+    tvcustom: readKey(KEYS[7]) || null,
     updatedAt: Date.now(),
   };
 }
@@ -146,7 +152,18 @@ function applyMerged(m) {
     localStorage.setItem(KEYS[4], JSON.stringify(m.sites || []));
     localStorage.setItem(KEYS[5], JSON.stringify(m.tvfavs || []));
     if (m.brand) localStorage.setItem(KEYS[6], JSON.stringify(m.brand));
+    if (m.tvcustom) localStorage.setItem(KEYS[7], JSON.stringify(m.tvcustom));
   } catch (_) {}
+}
+/* Las listas M3U propias: {lists:[], channels:[]}. Se unen las dos partes
+   por URL, igual que los sitios, para que añadir una lista en el móvil no
+   borre la que añadiste en la computadora. */
+function mergeTvCustom(remote, local) {
+  if (!remote && !local) return null;
+  return {
+    lists: mergeSites(remote?.lists, local?.lists),
+    channels: mergeSites(remote?.channels, local?.channels),
+  };
 }
 // Une los sitios favoritos de ambos equipos sin duplicar (clave: la URL).
 function mergeSites(remote, local) {
@@ -191,6 +208,7 @@ function merge(remote, local) {
     tvfavs: mergeSites(remote.tvfavs, local.tvfavs),
     // La marca es un ajuste único: gana la de este equipo si la hay.
     brand: local.brand || remote.brand || null,
+    tvcustom: mergeTvCustom(remote.tvcustom, local.tvcustom),
     updatedAt: Date.now(),
   };
 }

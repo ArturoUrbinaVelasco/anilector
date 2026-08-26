@@ -5,13 +5,20 @@ import { t } from "./i18n.js";
 
 const $ = (id) => document.getElementById(id);
 
-/* Todo lo que compone "tus datos". Debe coincidir con lo que
-   auth.js sincroniza con Drive, más los ajustes locales. */
+/* Todo lo que compone "tus datos": lo que auth.js sincroniza con Drive
+   MÁS los ajustes que solo viven en este equipo. Un respaldo sirve para
+   volver a dejar la app como estaba, así que aquí entra todo.
+   ⚠️ Faltaban `tvcustom` (tus listas M3U propias, que pueden ser el dato
+   más difícil de recuperar), `proxyurl` y los ajustes de lectura: se
+   perdían al reinstalar aunque hubieras exportado. */
 const CLAVES = [
   "anilector.library", "anilector.progress", "anilector.recent",
   "anilector.seen", "anilector.sites", "anilector.tvfavs",
   "anilector.brand", "anilector.theme", "anilector.lang",
   "anilector.tvlast", "anilector.ytprogress", "anilector.ythistory",
+  "anilector.tvcustom", "anilector.proxyurl", "anilector.ytdur",
+  "anilector.ytAutoplay", "anilector.tvmode", "anilector.webtoon",
+  "anilector.readNight", "anilector.readType",
 ];
 
 function toast(msg) {

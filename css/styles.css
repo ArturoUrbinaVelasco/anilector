@@ -436,6 +436,23 @@ body {
   border-radius: 10px;
   color: var(--text-dim);
 }
+/* Los recientes que son enlaces sí se pueden volver a abrir. */
+button.recent-file {
+  width: 100%;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+button.recent-file:hover, button.recent-file:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+}
 
 .viewer-modal { padding: 0; }
 .viewer-shell {
@@ -453,6 +470,7 @@ body {
   background: var(--bg-alt);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+  position: relative;   /* ancla de los paneles desplegables */
 }
 .viewer-title { font-weight: 700; font-size: 0.9rem; flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .viewer-controls { display: flex; align-items: center; gap: 0.3rem; }
@@ -547,6 +565,89 @@ body {
 #epubArea { width: 100%; height: 100%; background: #fff; border-radius: 8px; }
 .iframe-fallback { text-align: center; padding: 3rem 1rem; color: var(--text-dim); }
 .iframe-fallback .btn { margin-top: 1rem; }
+.err-actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+
+/* ---------- paneles del visor (índice / tipografía) ---------- */
+.viewer-pop {
+  position: absolute;
+  top: calc(100% + 0.2rem);
+  right: 0.6rem;
+  z-index: 30;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  max-height: min(70vh, 30rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.viewer-toc { width: min(22rem, calc(100vw - 1.2rem)); }
+.toc-lista { list-style: none; margin: 0; padding: 0.35rem; }
+.toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.toc-item:hover, .toc-item:focus-visible { background: var(--bg); color: var(--accent); }
+
+.viewer-type { padding: 0.5rem; width: max-content; min-width: 14rem; }
+.tipo-fila { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.1rem; }
+.tipo-nombre { flex: 1; font-size: 0.85rem; color: var(--text-dim); }
+.tipo-valor { min-width: 3.2rem; text-align: center; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.tipo-fila .btn { padding: 0.15rem 0.6rem; font-size: 1rem; line-height: 1.2; }
+.tipo-reset { width: 100%; margin-top: 0.35rem; font-size: 0.8rem; }
+
+.viewer-tr { padding: 0.6rem; width: min(20rem, calc(100vw - 1.2rem)); }
+.tr-select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.tr-accion { width: 100%; margin-top: 0.5rem; }
+.tr-estado { margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--text-dim); min-height: 1em; }
+.tr-aviso { margin: 0; font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; }
+.viewer-controls .btn.activo { color: var(--accent); border-color: var(--accent); }
+
+/* Campo para saltar a una página escribiendo el número. */
+.goto-input {
+  width: 4.5rem;
+  padding: 0.15rem 0.3rem;
+  font-size: 0.85rem;
+  text-align: center;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+.page-info { cursor: pointer; }
+
+/* Aviso flotante mientras se cargan las secciones de un salto largo. */
+.jump-toast {
+  position: absolute;
+  top: 0.8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
 
 /* ---------- Sitios favoritos ---------- */
 .site-chip {
@@ -1273,6 +1374,16 @@ body {
   /* ---- Visor a pantalla completa ---- */
   .viewer-toolbar { gap: 0.3rem; }
   .page-info { min-width: 52px; font-size: 0.75rem; }
+
+  /* Con el índice, la tipografía y el traductor son 7 botones: en un
+     teléfono ya no caben junto al título y el ✕ se quedaba solo en una
+     tercera fila, comiéndose el alto de lectura. Se reordena: arriba el
+     título y el cierre, debajo los controles centrados. */
+  .viewer-controls { order: 2; width: 100%; justify-content: center; gap: 0.15rem; }
+  .viewer-actions { order: 1; }
+  .viewer-controls .btn { padding: 0.35rem 0.5rem; }
+  .viewer-pop { left: 0.6rem; right: 0.6rem; width: auto; }
+  .viewer-type { width: auto; }
 
   /* Botones y filas: objetivo táctil cómodo */
   .btn { min-height: 40px; }
