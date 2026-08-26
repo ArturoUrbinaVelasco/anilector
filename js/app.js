@@ -9,8 +9,8 @@ import {
   getMangaChapters, getChapterPages, resolveExactLink, hasBackend,
 } from "./api.js";
 import {
-  openLocalFiles, openUrl, openIframe, openImages, openGoogleBook, closeViewer,
-  bindViewerControls, openRemoteFile,
+  openLocalFiles, openLocalFile, openUrl, openIframe, openImages, openGoogleBook,
+  closeViewer, bindViewerControls, openRemoteFile,
 } from "./viewer.js";
 import { BOOK_SITES_SHOWN } from "./config.js";
 import { initAuth } from "./auth.js";
@@ -20,6 +20,7 @@ import { initWebApps } from "./webapps.js";
 import { initBrand } from "./brand.js";
 import { initTvMode } from "./tvmode.js";
 import { initPwa } from "./pwa.js";
+import * as DOCS from "./docs.js";
 
 /* ---------- estado ---------- */
 const S = {
@@ -796,6 +797,62 @@ function renderRecent() {
         : `<div class="recent-file" title="${t("reader.recentLocal")}">📄 ${esc(r)}</div>`).join("")
     : "";
 }
+/* ---------- Mis descargas (documentos guardados en el aparato) ---------- */
+async function renderDescargas() {
+  const caja = $("descargasBox");
+  if (!caja) return;
+  if (!DOCS.hayAlmacen()) return caja.classList.add("hidden");
+
+  const fichas = await DOCS.listar();
+  caja.classList.toggle("hidden", fichas.length === 0);
+  if (!fichas.length) return;
+
+  $("descargasEspacio").textContent =
+    `${fichas.length} · ${DOCS.tamanoLegible(await DOCS.espacioUsado())}`;
+  $("descargasLista").innerHTML = fichas.map((f) => `
+    <div class="dl-item" data-id="${esc(f.id)}">
+      <button class="dl-open" data-id="${esc(f.id)}" title="${t("downloads.open")}">
+        <span class="dl-name">📄 ${esc(f.titulo || f.nombre)}</span>
+        <span class="dl-meta">${DOCS.tamanoLegible(f.tamano)} · ${fechaCorta(f.ts)}</span>
+      </button>
+      <button class="dl-del" data-id="${esc(f.id)}" title="${t("downloads.delete")}">✕</button>
+    </div>`).join("");
+}
+function fechaCorta(ts) {
+  try { return new Date(ts).toLocaleDateString(getLang() === "en" ? "en" : "es",
+    { day: "numeric", month: "short" }); }
+  catch { return ""; }
+}
+
+async function abrirDescarga(id) {
+  const fichas = await DOCS.listar();
+  const meta = fichas.find((f) => f.id === id);
+  if (!meta) return toast(t("downloads.missing"));
+  try {
+    // Entra por el mismo camino que un archivo del equipo, así que
+    // conserva el punto de lectura que ya tuviera.
+    await openLocalFile(await DOCS.comoArchivo(meta));
+  } catch (e) {
+    toast(e.message || t("downloads.missing"));
+  }
+}
+
+/* Borrar pide confirmación EN EL PROPIO BOTÓN. Un `confirm()` bloquea
+   la pestaña entera y en la app instalada queda fatal. */
+function pedirBorrado(btn) {
+  if (btn.dataset.seguro) return true;
+  btn.dataset.seguro = "1";
+  const previo = btn.textContent;
+  btn.textContent = t("downloads.confirm");
+  btn.classList.add("dl-del-armado");
+  btn._t = setTimeout(() => {
+    delete btn.dataset.seguro;
+    btn.textContent = previo;
+    btn.classList.remove("dl-del-armado");
+  }, 4000);
+  return false;
+}
+
 function pushRecent(name) {
   try {
     let r = JSON.parse(localStorage.getItem("anilector.recent") || "[]");
@@ -938,6 +995,25 @@ function bindEvents() {
     pushRecent(b.dataset.url);
   });
 
+  // Mis descargas: abrir y borrar
+  $("descargasLista").addEventListener("click", async (e) => {
+    const abrir = e.target.closest(".dl-open");
+    if (abrir) return abrirDescarga(abrir.dataset.id);
+    const borrar = e.target.closest(".dl-del");
+    if (!borrar) return;
+    if (!pedirBorrado(borrar)) return;      // primer clic: solo arma
+    clearTimeout(borrar._t);
+    try {
+      await DOCS.borrar(borrar.dataset.id);
+      toast(t("downloads.deleted"));
+    } catch (_) {
+      toast(t("downloads.deleteFailed"));
+    }
+    renderDescargas();
+  });
+  // El visor avisa cuando guarda algo, para repintar el estante.
+  window.addEventListener("anilector:descargas", renderDescargas);
+
   // idioma y tema (los selectores del encabezado y los de la hoja «Más»
   // son el mismo ajuste: se mantienen sincronizados)
   const applyLang = (v) => {
@@ -999,6 +1075,7 @@ function init() {
   loadYears();
   loadGenres();
   renderRecent();
+  renderDescargas();
   bindEvents();
   initTv();
   initYouTube();

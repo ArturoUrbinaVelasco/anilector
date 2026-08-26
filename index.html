@@ -325,6 +325,17 @@
         </form>
       </div>
     </div>
+
+    <!-- Documentos guardados dentro de la app (IndexedDB): se abren sin
+         conexión y sin volver a buscar el archivo en el equipo. -->
+    <section id="descargasBox" class="downloads-box hidden">
+      <div class="downloads-head">
+        <h3 data-i18n="downloads.title">📥 Mis descargas</h3>
+        <span id="descargasEspacio" class="downloads-space"></span>
+      </div>
+      <p class="downloads-help" data-i18n="downloads.help">Lo que guardes con 📥 mientras lees se queda aquí, dentro de la app, y se abre aunque no tengas internet.</p>
+      <div id="descargasLista" class="downloads-list"></div>
+    </section>
   </main>
 
   <!-- ======= MODAL: DETALLE ======= -->
@@ -347,6 +358,7 @@
           <button id="vToc" class="btn btn-ghost" title="Índice" style="display:none">☰</button>
           <button id="vType" class="btn btn-ghost" title="Tamaño de letra" style="display:none">🅰</button>
           <button id="vTr" class="btn btn-ghost" title="Traducir" style="display:none">🌐</button>
+          <button id="vKeep" class="btn btn-ghost" title="Guardar en la app para leer sin conexión" style="display:none">📥</button>
           <button id="vZoomOut" class="btn btn-ghost" title="Alejar">➖</button>
           <button id="vZoomIn" class="btn btn-ghost" title="Acercar">➕</button>
         </div>

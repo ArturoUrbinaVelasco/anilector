@@ -454,6 +454,53 @@ button.recent-file:hover, button.recent-file:focus-visible {
   color: var(--text);
 }
 
+/* ---------- Mis descargas ---------- */
+.downloads-box {
+  margin-top: 1.2rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+}
+.downloads-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.downloads-head h3 { margin: 0; font-size: 1rem; }
+.downloads-space { font-size: 0.8rem; color: var(--text-dim); margin-left: auto; }
+.downloads-help { margin: 0.4rem 0 0.8rem; font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; }
+.downloads-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.dl-item { display: flex; align-items: stretch; gap: 0.4rem; }
+.dl-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+  background: var(--bg-soft);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.dl-open:hover, .dl-open:focus-visible { border-color: var(--accent); }
+.dl-name { font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-meta { font-size: 0.75rem; color: var(--text-dim); }
+.dl-del {
+  flex: 0 0 auto;
+  background: var(--bg-soft);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0 0.75rem;
+  cursor: pointer;
+}
+.dl-del:hover, .dl-del:focus-visible { border-color: var(--danger, #e05555); color: var(--danger, #e05555); }
+/* Segundo clic: el botón ya avisó de que va en serio. */
+.dl-del-armado { border-color: var(--danger, #e05555); color: var(--danger, #e05555); font-weight: 700; }
+
 .viewer-modal { padding: 0; }
 .viewer-shell {
   width: 100%;

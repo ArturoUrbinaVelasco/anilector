@@ -17,7 +17,7 @@
       Es el único paso manual; sin él los navegadores seguirán con la
       copia guardada.
    ============================================================ */
-const VERSION = "v3.12.0";
+const VERSION = "v3.13.0";
 const CACHE = `anilector-${VERSION}`;
 
 /* El esqueleto de la app. Las librerías de /vendor son grandes pero se
@@ -34,6 +34,7 @@ const SHELL = [
   "./js/i18n.js",
   "./js/tv.js",
   "./js/tvmode.js",
+  "./js/docs.js",
   "./js/translate.js",
   "./js/viewer.js",
   "./js/webapps.js",

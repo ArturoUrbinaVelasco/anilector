@@ -10,6 +10,7 @@
 import { t } from "./i18n.js";
 import { BACKEND_URL, NO_EMBED_SITES } from "./config.js";
 import * as TR from "./translate.js";
+import * as DOCS from "./docs.js";
 
 const modal = () => document.getElementById("viewerModal");
 const body = () => document.getElementById("viewerBody");
@@ -35,6 +36,7 @@ const state = {
   blobUrls: new Set(),
   docKey: null,      // clave para recordar progreso
   toc: [],           // índice del documento: [{ label, nivel, ir() }]
+  archivoOrigen: null, // el File abierto, para poder guardarlo con 📥
   tipo: null,        // tipografía de lectura (tamaño / interlineado / ancho)
   onScroll: null,    // handler de scroll del modo MOBI (hay que quitarlo al cerrar)
 };
@@ -385,6 +387,8 @@ function alternarPanelIndice() {
 }
 
 /* ---------- apertura / cierre ---------- */
+let origenPendiente = null;      // lo pone openLocalFile, lo recoge openModal
+
 function openModal(title, { showControls = true, external = null } = {}) {
   titleEl().textContent = title;
   controls().style.display = showControls ? "" : "none";
@@ -398,12 +402,14 @@ function openModal(title, { showControls = true, external = null } = {}) {
   // de tipografía lo vuelve a encender quien tenga texto que fluya.
   cerrarPaneles();
   ponerIndice([]);
-  for (const id of ["vType", "vTr"]) {
+  for (const id of ["vType", "vTr", "vKeep"]) {
     const b = document.getElementById(id);
     if (b) { b.style.display = "none"; b.classList.remove("activo"); }
   }
   state.trOn = false;
   state.trPar = null;
+  state.archivoOrigen = origenPendiente;
+  origenPendiente = null;
   state.tipo = leerTipo();
   body().innerHTML = "";
   body().scrollTop = 0;
@@ -433,6 +439,7 @@ export function closeViewer() {
   Object.assign(state, {
     mode: null, pdf: null, images: [], imgIndex: 0, imgZoom: 1,
     epubRendition: null, epubBook: null, mobiBook: null, archive: null, docKey: null,
+    archivoOrigen: null,
   });
   body().innerHTML = "";
 }
@@ -481,6 +488,7 @@ export async function openPdf(source, title) {
   canvas.id = "pdfCanvas";
   body().appendChild(canvas);
   ajustarBotonTipo();
+  ajustarBotonGuardar();
   await renderPdfPage();
   await indicePdf();
 }
@@ -611,6 +619,7 @@ export async function openEpub(file, title) {
 
   ajustarBotonTipo();
   ajustarBotonTr();
+  ajustarBotonGuardar();
   aplicarTipo();
   let porcentajeListo = false;
   rendition.on("relocated", (loc) => {
@@ -775,6 +784,7 @@ export async function openMobi(file, title) {
   document.getElementById("vNext").style.display = "none";
   ajustarBotonTipo();
   ajustarBotonTr();
+  ajustarBotonGuardar();
   await loadNext(3);
   aplicarTipo();
 
@@ -883,6 +893,7 @@ export async function openImages(pages, title) {
   state.imgIndex = Math.min(progress()[state.docKey]?.index || 0, Math.max(0, pages.length - 1));
   try { state.webtoon = localStorage.getItem("anilector.webtoon") === "1"; } catch (_) { state.webtoon = false; }
   addWebtoonToggle();
+  ajustarBotonGuardar();
   if (state.webtoon) return renderWebtoon();
   body().innerHTML = "";
   const img = document.createElement("img");
@@ -895,38 +906,116 @@ export async function openImages(pages, title) {
 /* Guarda las páginas abiertas como un CBZ para leerlo sin conexión.
    Un CBZ es un ZIP de imágenes numeradas: con JSZip (ya cargado) se
    arma en el navegador, sin subir nada a ningún sitio. */
-async function descargarCBZ() {
-  const btn = document.getElementById("vSave");
+function nombreLimpio() {
+  return (titleEl().textContent || "manga").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+}
+
+/* Arma el CBZ y devuelve el Blob. Se separó de la descarga porque
+   ahora hay dos destinos: tu disco (💾) y las descargas de la app (📥). */
+async function armarCBZ(alProgreso) {
+  if (!window.JSZip) throw new Error("JSZip");
+  const zip = new window.JSZip();
+  const total = state.images.length;
+  const ancho = String(total).length;
+  for (let i = 0; i < total; i++) {
+    alProgreso?.(`${i + 1}/${total}`);
+    const url = await resolvePage(state.images[i]);
+    const blob = await (await fetch(url)).blob();
+    const ext = (state.images[i].name?.match(/\.(\w+)$/)?.[1] || "jpg").toLowerCase();
+    zip.file(`${String(i + 1).padStart(ancho, "0")}.${ext}`, blob);
+  }
+  alProgreso?.("⏳");
+  return zip.generateAsync({ type: "blob" });
+}
+
+/* Envuelve una tarea larga de un botón: lo bloquea, enseña el avance
+   y siempre lo deja como estaba, salga bien o mal. */
+async function conBoton(id, tarea) {
+  const btn = document.getElementById(id);
   if (!btn || btn.dataset.busy) return;
   const original = btn.textContent;
   btn.dataset.busy = "1";
   try {
-    if (!window.JSZip) throw new Error("JSZip");
-    const zip = new window.JSZip();
-    const total = state.images.length;
-    const ancho = String(total).length;
-    for (let i = 0; i < total; i++) {
-      btn.textContent = `${i + 1}/${total}`;
-      const url = await resolvePage(state.images[i]);
-      const blob = await (await fetch(url)).blob();
-      const ext = (state.images[i].name?.match(/\.(\w+)$/)?.[1] || "jpg").toLowerCase();
-      zip.file(`${String(i + 1).padStart(ancho, "0")}.${ext}`, blob);
-    }
-    btn.textContent = "⏳";
-    const out = await zip.generateAsync({ type: "blob" });
-    const nombre = (titleEl().textContent || "manga").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(out);
-    a.download = `${nombre}.cbz`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  } catch (e) {
-    console.warn("CBZ:", e.message);
-    alert(t("reader.saveFailed"));
+    await tarea((txt) => { btn.textContent = txt; });
   } finally {
     btn.textContent = original;
     delete btn.dataset.busy;
   }
+}
+
+async function descargarCBZ() {
+  return conBoton("vSave", async (avisar) => {
+    try {
+      const out = await armarCBZ(avisar);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(out);
+      a.download = `${nombreLimpio()}.cbz`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e) {
+      console.warn("CBZ:", e.message);
+      toastVisor(t("reader.saveFailed"));
+    }
+  });
+}
+
+/* ---------- guardar en la app (Mis descargas) ---------- */
+/* Un cómic cuyas páginas viven en internet se empaqueta como CBZ; el
+   resto se guarda tal cual, que ya es un archivo. */
+async function guardarEnLaApp() {
+  return conBoton("vKeep", async (avisar) => {
+    try {
+      let archivo = state.archivoOrigen;
+      if (!archivo && state.mode === "images" && state.images.length) {
+        const blob = await armarCBZ(avisar);
+        archivo = new File([blob], `${nombreLimpio()}.cbz`, { type: "application/zip" });
+      }
+      if (!archivo) return toastVisor(t("reader.keepUnsupported"));
+
+      avisar("⏳");
+      await DOCS.guardar(archivo, { titulo: titleEl().textContent || archivo.name });
+      DOCS.pedirPersistencia();           // que el navegador no lo borre por falta de sitio
+      marcarGuardado(true);
+      toastVisor(t("reader.keptOk"));
+      window.dispatchEvent(new Event("anilector:descargas"));
+    } catch (e) {
+      console.warn("Guardar en la app:", e.name, e.message);
+      toastVisor(/quota/i.test(e.name + e.message)
+        ? t("reader.keepNoRoom") : t("reader.keepFailed"));
+    }
+  });
+}
+
+function marcarGuardado(si) {
+  const b = document.getElementById("vKeep");
+  if (!b) return;
+  b.classList.toggle("activo", !!si);
+  b.title = si ? t("reader.keptTitle") : t("reader.keep");
+}
+
+/* El botón solo aparece si hay algo que guardar y dónde guardarlo, y
+   se marca si ese documento ya está descargado. */
+async function ajustarBotonGuardar() {
+  const b = document.getElementById("vKeep");
+  if (!b) return;
+  const puede = DOCS.hayAlmacen() &&
+    (!!state.archivoOrigen || (state.mode === "images" && state.images.length > 0));
+  b.style.display = puede ? "" : "none";
+  if (!puede) return;
+  const f = state.archivoOrigen;
+  marcarGuardado(f ? await DOCS.existe(f.name, f.size) : false);
+}
+
+/* Aviso corto dentro del visor: `alert()` bloquea la pestaña entera y
+   en una app instalada queda especialmente mal. */
+function toastVisor(msg) {
+  quitarLoaderFlotante();
+  const el = document.createElement("div");
+  el.id = "vJumping";
+  el.className = "jump-toast";
+  el.textContent = msg;
+  body().appendChild(el);
+  setTimeout(() => { if (document.getElementById("vJumping") === el) el.remove(); }, 3500);
 }
 
 /* Modo lectura nocturna: baja el brillo y calienta el tono. Es un
@@ -1347,6 +1436,7 @@ function soloLectura() {
   pageInfo().textContent = "";
   ajustarBotonTipo();
   ajustarBotonTr();
+  ajustarBotonGuardar();
   aplicarTipo();
 }
 
@@ -1458,6 +1548,11 @@ export async function openLocalFiles(fileList) {
 }
 
 export async function openLocalFile(f) {
+  /* Se recuerda el archivo para poder guardarlo con 📥 sin volver a
+     pedírselo al usuario ni a la red. Se deja «pendiente» y lo recoge
+     openModal: así un capítulo de MangaDex, que llega por otro camino,
+     no hereda por error el archivo del documento anterior. */
+  origenPendiente = f;
   const name = (f.name || "").toLowerCase();
   if (RE_PDF.test(name) || f.type === "application/pdf") return openPdf(f, f.name);
   if (RE_EPUB.test(name)) return openEpub(f, f.name);
@@ -1633,6 +1728,7 @@ export function bindViewerControls() {
   document.getElementById("vToc")?.addEventListener("click", alternarPanelIndice);
   document.getElementById("vType")?.addEventListener("click", alternarPanelTipo);
   document.getElementById("vTr")?.addEventListener("click", alternarPanelTr);
+  document.getElementById("vKeep")?.addEventListener("click", guardarEnLaApp);
   document.getElementById("vTrPanel")?.addEventListener("click", (e) => {
     if (e.target.id !== "vTrGo") return;
     if (state.trOn) volverAlOriginal();
