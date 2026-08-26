@@ -177,8 +177,9 @@ export async function openPdf(source, title) {
   state.zoom = window.innerWidth < 720 ? 0.8 : 1.2;
 
   const pdfjsLib = window.pdfjsLib;
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  // El worker vive en el repo (vendor/) para que los PDF abran sin conexión;
+  // la ruta se resuelve contra la página, no contra este archivo js/.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.js";
 
   const load = (src) =>
     (typeof src === "string"

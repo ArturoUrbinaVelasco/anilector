@@ -18,9 +18,13 @@
        y la que arma el CBZ al guardar, y tiene que funcionar sin conexión
        (el service worker solo puede guardar archivos de este mismo sitio). -->
   <script src="vendor/jszip/jszip.min.js" defer></script>
-  <!-- Librerías de visor (CDN) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.93/epub.min.js" defer></script>
+  <!-- Librerías del visor: EN EL REPOSITORIO por lo mismo que JSZip — el
+       visor promete funcionar sin conexión y el service worker no puede
+       guardar archivos de otros dominios. -->
+  <script src="vendor/pdfjs/pdf.min.js" defer></script>
+  <script src="vendor/epubjs/epub.min.js" defer></script>
+  <!-- Las de TV siguen en CDN a propósito: los canales en vivo necesitan
+       internet de todos modos, así que tenerlas sin conexión no aporta. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mpegts.js/1.7.3/mpegts.js" defer></script>
 </head>

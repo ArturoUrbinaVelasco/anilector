@@ -17,7 +17,7 @@
       Es el único paso manual; sin él los navegadores seguirán con la
       copia guardada.
    ============================================================ */
-const VERSION = "v3.9.1";
+const VERSION = "v3.10.0";
 const CACHE = `anilector-${VERSION}`;
 
 /* El esqueleto de la app. Las librerías de /vendor son grandes pero se
@@ -39,6 +39,9 @@ const SHELL = [
   "./js/youtube.js",
   "./js/pwa.js",
   "./vendor/jszip/jszip.min.js",
+  "./vendor/pdfjs/pdf.min.js",
+  "./vendor/pdfjs/pdf.worker.min.js",
+  "./vendor/epubjs/epub.min.js",
   "./vendor/marked.esm.js",
   "./vendor/libarchive/libarchive.js",
   "./vendor/libarchive/worker-bundle.js",
