@@ -43,6 +43,25 @@ function VersionDe($texto) {
 if (-not (Test-Path "sw.js")) { Mal "No encuentro sw.js. Ejecuta el script desde la carpeta del repositorio." }
 if (-not (Test-Path ".git"))  { Mal "Esta carpeta no es un repositorio git." }
 
+# Un index.lock huerfano bloquea cualquier git y el mensaje que da
+# ("Another git process seems to be running") asusta mas de lo que
+# explica. Pasa, por ejemplo, si un git se corto a medias o si otra
+# herramienta miro el repo y no pudo limpiar el archivo.
+$lock = ".git\index.lock"
+if (Test-Path $lock) {
+  $gitVivo = Get-Process git -ErrorAction SilentlyContinue
+  $edad = (Get-Date) - (Get-Item $lock).LastWriteTime
+  if ($gitVivo) {
+    Mal "Hay un git en marcha ahora mismo. Espera a que termine y vuelve a intentarlo."
+  }
+  if ($edad.TotalSeconds -lt 60) {
+    Mal "Hay un $lock recien creado. Espera un minuto y vuelve a intentarlo."
+  }
+  # Sin git vivo y con mas de un minuto: esta huerfano, no protege nada.
+  try { Remove-Item -LiteralPath $lock -Force } catch { Mal "No pude borrar $lock : $_" }
+  Write-Host "      (borrado un $lock huerfano de hace $([int]$edad.TotalMinutes) min)" -ForegroundColor Yellow
+}
+
 if (-not (git status --porcelain)) {
   Write-Host "`nNo hay nada que publicar: el repositorio esta limpio.`n" -ForegroundColor Yellow
   exit 0
