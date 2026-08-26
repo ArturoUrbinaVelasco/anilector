@@ -17,8 +17,11 @@
       Es el único paso manual; sin él los navegadores seguirán con la
       copia guardada.
    ============================================================ */
-const VERSION = "v3.13.0";
+const VERSION = "v3.14.0";
 const CACHE = `anilector-${VERSION}`;
+/* Buzón de lo que te comparten desde otra app. Va aparte de la caché
+   de la app porque NO debe borrarse al publicar una versión nueva. */
+const CACHE_COMPARTIR = "anilector-compartido";
 
 /* El esqueleto de la app. Las librerías de /vendor son grandes pero se
    guardan una sola vez y valen mucho sin conexión. */
@@ -35,6 +38,7 @@ const SHELL = [
   "./js/tv.js",
   "./js/tvmode.js",
   "./js/docs.js",
+  "./js/entradas.js",
   "./js/translate.js",
   "./js/viewer.js",
   "./js/webapps.js",
@@ -68,7 +72,10 @@ self.addEventListener("activate", (e) => {
   e.waitUntil((async () => {
     const nombres = await caches.keys();
     await Promise.all(nombres
-      .filter((n) => n.startsWith("anilector-") && n !== CACHE)
+      // ⚠️ El buzón de compartidos se salva a propósito: si alguien
+      // comparte un archivo justo mientras se activa una versión nueva,
+      // borrarlo aquí lo haría desaparecer camino de la app.
+      .filter((n) => n.startsWith("anilector-") && n !== CACHE && n !== CACHE_COMPARTIR)
       .map((n) => caches.delete(n)));
     await self.clients.claim();
     // Avisar a las pestañas abiertas de que hay versión nueva.
@@ -88,9 +95,55 @@ self.addEventListener("message", (e) => {
      porque son datos vivos y cachearlos daría resultados obsoletos. */
 self.addEventListener("fetch", (e) => {
   const req = e.request;
+  const urlPeticion = new URL(req.url);
+
+  /* ---------- «Compartir con AniLector» ----------
+     Al compartir desde otra app, el navegador hace un POST a ./compartir.
+     Ese POST no sale a ningún servidor —GitHub Pages solo sirve archivos
+     estáticos y no sabría qué hacer con él—: lo atendemos aquí. Los
+     archivos se dejan en un buzón (Cache Storage) y se reenvía a la app
+     con ?compartido=N para que los recoja.
+     El nombre del archivo viaja en una cabecera propia, codificado,
+     porque las cabeceras HTTP solo admiten ASCII. */
+  if (req.method === "POST" && urlPeticion.pathname.endsWith("/compartir")) {
+    e.respondWith((async () => {
+      const base = self.registration.scope;
+      try {
+        const datos = await req.formData();
+        const archivos = datos.getAll("archivos").filter((f) => f && f.size >= 0 && f.name);
+
+        if (archivos.length) {
+          const cache = await caches.open(CACHE_COMPARTIR);
+          await Promise.all(archivos.map((f, i) => cache.put(
+            new URL(`compartido/${i}`, base).href,
+            new Response(f, {
+              headers: {
+                "content-type": f.type || "application/octet-stream",
+                "x-nombre": encodeURIComponent(f.name || `archivo-${i}`),
+              },
+            }))));
+          return Response.redirect(
+            new URL(`index.html?compartido=${archivos.length}`, base).href, 303);
+        }
+
+        // Sin archivos: puede ser un enlace compartido desde el navegador.
+        const enlace = (datos.get("enlace") || datos.get("texto") || "").toString().trim();
+        const soloUrl = (enlace.match(/https?:\/\/\S+/) || [])[0];
+        if (soloUrl) {
+          return Response.redirect(
+            new URL(`index.html?abrir=${encodeURIComponent(soloUrl)}`, base).href, 303);
+        }
+      } catch (_) {
+        // Que un fallo aquí no deje al usuario en una pantalla de error.
+      }
+      return Response.redirect(new URL("index.html", base).href, 303);
+    })());
+    return;
+  }
+
   if (req.method !== "GET") return;
 
-  const url = new URL(req.url);
+  const url = urlPeticion;
   if (url.origin !== self.location.origin) return;      // fuera: sin tocar
   if (url.pathname.startsWith("/api/")) return;         // proxy del servidor local
 

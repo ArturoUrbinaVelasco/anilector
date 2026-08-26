@@ -21,6 +21,7 @@ import { initBrand } from "./brand.js";
 import { initTvMode } from "./tvmode.js";
 import { initPwa } from "./pwa.js";
 import * as DOCS from "./docs.js";
+import { initEntradas } from "./entradas.js";
 
 /* ---------- estado ---------- */
 const S = {
@@ -1083,6 +1084,9 @@ function init() {
   initBrand();
   initTvMode();
   initPwa();
+  // Arrastrar y soltar, doble clic en el explorador y «compartir con
+  // AniLector». Va al final: necesita el visor y el toast ya montados.
+  initEntradas();
 
   syncStickyOffsets();
   window.addEventListener("resize", syncStickyOffsets);
