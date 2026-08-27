@@ -17,7 +17,7 @@
       Es el único paso manual; sin él los navegadores seguirán con la
       copia guardada.
    ============================================================ */
-const VERSION = "v3.19.0";
+const VERSION = "v3.20.0";
 const CACHE = `anilector-${VERSION}`;
 /* Buzón de lo que te comparten desde otra app. Va aparte de la caché
    de la app porque NO debe borrarse al publicar una versión nueva. */
@@ -48,6 +48,8 @@ const SHELL = [
   "./js/youtube.js",
   "./js/pwa.js",
   "./js/red.js",
+  "./js/buscar.js",
+  "./js/marcas.js",
   "./vendor/jszip/jszip.min.js",
   "./vendor/pdfjs/pdf.min.js",
   "./vendor/pdfjs/pdf.worker.min.js",

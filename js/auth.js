@@ -18,7 +18,7 @@ const FILE_NAME = "anilector-datos.json";
    nocturno no — sincronizarlos encendería el mando a distancia en el
    móvil solo porque lo usaste en el televisor. Esos van solo al respaldo
    en archivo (pwa.js). */
-const KEYS = ["anilector.library", "anilector.progress", "anilector.recent", "anilector.seen", "anilector.sites", "anilector.tvfavs", "anilector.brand", "anilector.tvcustom"];
+const KEYS = ["anilector.library", "anilector.progress", "anilector.recent", "anilector.seen", "anilector.sites", "anilector.tvfavs", "anilector.brand", "anilector.tvcustom", "anilector.marcas"];
 
 let tokenClient = null;
 let accessToken = null;

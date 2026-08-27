@@ -144,7 +144,7 @@ function renderContinue() {
   row.innerHTML = items.map((e) => {
     const p = progressOf(e);
     return `
-    <button class="continue-card" data-id="${esc(e.id)}" title="${esc(e.title)}">
+    <div class="continue-card" role="button" tabindex="0" data-id="${esc(e.id)}" title="${esc(e.title)}">
       ${e.cover
         ? `<img class="continue-cover" loading="lazy" src="${esc(e.cover)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'continue-cover ph',textContent:'📖'}))" />`
         : `<div class="continue-cover ph">${e.cat === "anime" ? "🎬" : e.cat === "manga" ? "📖" : "📕"}</div>`}
@@ -152,7 +152,7 @@ function renderContinue() {
       <span class="continue-name">${esc(e.title)}</span>
       <span class="continue-badge">▶ ${esc(kindLbl(e))}${p.total ? ` · ${p.hechos}/${p.total}` : ""}</span>
       <button class="continue-del" data-del="${esc(e.id)}" title="${t("library.removeContinue")}">✕</button>
-    </button>`;
+    </div>`;
   }).join("");
   row.querySelectorAll("[data-del]").forEach((b) =>
     b.addEventListener("click", (ev) => {
@@ -161,6 +161,10 @@ function renderContinue() {
       delete store[b.dataset.del];
       saveSeen(store);
       renderLibrary();
+    }));
+  row.querySelectorAll(".continue-card").forEach((c) =>
+    c.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); c.click(); }
     }));
   row.querySelectorAll(".continue-card").forEach((b) =>
     b.addEventListener("click", () => {
@@ -834,6 +838,7 @@ function closeDetail() {
 /* ---------- biblioteca ---------- */
 function renderLibrary() {
   renderContinue();
+  renderDocsEmpezados();
   const list = lib().filter((x) => S.libFilter === "all" || x.status === S.libFilter);
   $("libraryGrid").innerHTML = list.map((i) => cardHTML(i, { library: true })).join("");
   // Ocultar el estado vacío si hay tarjetas guardadas o algo en "Continuar".
@@ -943,6 +948,98 @@ function pedirBorrado(btn) {
     btn.classList.remove("dl-del-armado");
   }, 4000);
   return false;
+}
+
+
+/* ---------- «Seguir leyendo»: documentos empezados ----------
+   La estantería de arriba («Continuar») es de obras de la biblioteca:
+   anime y manga con sus episodios. Los DOCUMENTOS no aparecían en
+   ninguna parte: leías medio EPUB, lo cerrabas y no había forma de
+   volver, aunque la app supiera perfectamente por dónde ibas.
+
+   Desde v3.20 el progreso guarda también el nombre y el tamaño del
+   archivo (la clave es una huella y sola no dice nada), y con eso se
+   puede listar. Volver a abrirlo es otra cosa: **el navegador no puede
+   leer un archivo de tu disco por su cuenta**, ni siquiera uno que ya
+   abriste — por seguridad, hace falta que lo elijas tú. Los que estén
+   en «Mis descargas» sí se reabren de un clic, porque están dentro de
+   la app. Para los demás se dice claramente qué hacer. */
+function documentosEmpezados() {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem("anilector.progress") || "{}"); }
+  catch (_) { return []; }
+  return Object.entries(p)
+    .filter(([k, e]) => k.startsWith("doc:") && e && typeof e === "object" && e.n)
+    .map(([clave, e]) => ({ clave, nombre: e.n, tamano: e.s || 0, cuando: e.t || 0, v: e.v }))
+    .sort((a, b) => b.cuando - a.cuando)
+    .slice(0, 12);
+}
+
+/* Qué se enseña de cada uno: en un PDF la página, en un EPUB no hay
+   páginas fijas, así que se dice el capítulo cuando se sabe. */
+function detalleDoc(d) {
+  const v = d.v || {};
+  if (v.page) return `${t("reader.page")} ${v.page}`;
+  if (v.index != null) return `${t("reader.page")} ${v.index + 1}`;   // cómics
+  if (v.sec != null) return `${t("reader.section")} ${v.sec + 1}`;
+  return "";
+}
+const ICONO_DOC = (n) => /\.pdf$/i.test(n) ? "📕"
+  : /\.(epub)$/i.test(n) ? "📗"
+  : /\.(mobi|azw3?|prc)$/i.test(n) ? "📙"
+  : /\.(cbz|cbr|cb7|cbt|zip|rar)$/i.test(n) ? "📚" : "📄";
+
+async function renderDocsEmpezados() {
+  const sec = $("docsSection");
+  const row = $("docsRow");
+  if (!sec || !row) return;
+  const docs = documentosEmpezados();
+  sec.classList.toggle("hidden", docs.length === 0);
+  if (!docs.length) return;
+
+  // ¿Cuáles están guardados en la app? Solo esos se pueden reabrir.
+  let guardados = new Set();
+  try {
+    guardados = new Set((await DOCS.listar()).map((m) => m.id));
+  } catch (_) {}
+
+  row.innerHTML = docs.map((d) => {
+    const id = DOCS.idDe(d.nombre, d.tamano);
+    const dentro = guardados.has(id);
+    const detalle = detalleDoc(d);
+    return `
+    <div class="continue-card doc-card" role="button" tabindex="0" data-doc="${esc(d.clave)}"
+         data-id="${esc(id)}" data-dentro="${dentro ? "1" : ""}"
+         title="${esc(d.nombre)}">
+      <div class="continue-cover ph">${ICONO_DOC(d.nombre)}</div>
+      <span class="continue-name">${esc(d.nombre)}</span>
+      <span class="continue-badge">${dentro ? "▶" : "📥"} ${esc(detalle || t("docs.empezado"))}</span>
+      <button class="continue-del" data-deldoc="${esc(d.clave)}" title="${esc(t("docs.quitar"))}">✕</button>
+    </div>`;
+  }).join("");
+
+  row.querySelectorAll("[data-deldoc]").forEach((b) =>
+    b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      try {
+        const p = JSON.parse(localStorage.getItem("anilector.progress") || "{}");
+        delete p[b.dataset.deldoc];
+        localStorage.setItem("anilector.progress", JSON.stringify(p));
+      } catch (_) {}
+      renderDocsEmpezados();
+    }));
+
+  // Una tarjeta que no es <button> no responde sola a Enter ni a espacio.
+  row.querySelectorAll(".continue-card").forEach((c) =>
+    c.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); c.click(); }
+    }));
+  row.querySelectorAll("[data-doc]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (b.dataset.dentro) return abrirDescarga(b.dataset.id);
+      // No está guardado: el navegador no puede abrirlo solo.
+      toast(t("docs.noGuardado"));
+    }));
 }
 
 function pushRecent(name) {

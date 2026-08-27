@@ -1695,3 +1695,75 @@ button.recent-file:hover, button.recent-file:focus-visible {
   line-height: 1.5;
 }
 .btn-sm { padding: .25rem .7rem; font-size: .8rem; }
+
+/* ---------- buscar dentro del documento y marcadores (v3.20) ---------- */
+.viewer-busca, .viewer-marcas { width: min(28rem, 92vw); max-height: 60vh; overflow-y: auto; }
+.busca-barra { display: flex; gap: .4rem; margin-bottom: .6rem; }
+.busca-barra input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: .45rem .6rem;
+  font: inherit;
+  font-size: .9rem;
+}
+.busca-estado { margin: .2rem 0 .5rem; font-size: .82rem; color: var(--text-dim); line-height: 1.45; }
+.busca-lista { display: grid; gap: .3rem; }
+.busca-item {
+  display: grid;
+  gap: .15rem;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  padding: .4rem .5rem;
+  color: var(--text);
+  font: inherit;
+  font-size: .84rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.busca-item:hover { background: var(--bg-soft); }
+.busca-donde { font-size: .74rem; color: var(--accent); font-weight: 700; }
+.busca-txt { color: var(--text-dim); }
+.busca-item mark, mark.busca-hit {
+  background: rgba(255, 214, 0, .35);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 .1em;
+}
+.marca-nueva { width: 100%; margin-bottom: .6rem; }
+.marca-lista { display: grid; gap: .35rem; }
+.marca { display: flex; align-items: flex-start; gap: .3rem; }
+.marca-ir {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: .1rem;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  padding: .4rem .5rem;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.marca-ir:hover { background: var(--bg-soft); }
+.marca-donde { font-size: .74rem; color: var(--accent); font-weight: 700; }
+.marca-nota { font-size: .84rem; color: var(--text-dim); line-height: 1.4; }
+.marca-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: .2rem .4rem;
+  font: inherit;
+  font-size: .84rem;
+}
+.marca-acciones { display: flex; gap: .1rem; flex-shrink: 0; }
+.doc-card .continue-cover.ph { font-size: 2.4rem; }

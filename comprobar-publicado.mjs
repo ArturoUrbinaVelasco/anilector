@@ -10,8 +10,10 @@
 
    Mira tres cosas:
      1. Que la versión del service worker publicado coincide con la
-        de este sw.js. Si no, es que el despliegue aún no ha subido
-        (GitHub Pages tarda 1-2 min) o que faltó hacer push.
+        de este sw.js. GitHub Pages tarda 1-2 minutos en refrescar, así
+        que si no coincide NO se da por malo a la primera: se espera y
+        se reintenta. Solo si tras varios intentos sigue sin coincidir
+        es que faltó el push.
      2. Que TODOS los archivos del esqueleto responden 200. Si uno
         falta, la app se instala «bien» pero se rompe sin conexión.
      3. Que el manifiesto y el index están donde deben.
@@ -33,19 +35,31 @@ console.log(`\nComprobando ${base}\n`);
 const local = await readFile(new URL("./sw.js", import.meta.url), "utf8");
 const vLocal = (local.match(/const VERSION = "([^"]+)"/) || [])[1];
 
+/* `cache: "no-store"` solo evita la caché del propio Node: la de la red
+   de GitHub sirve igual una copia guardada. Un parámetro que cambia en
+   cada intento es lo único que garantiza pedirlo de verdad. */
+const INTENTOS = 6, ESPERA = 20000;
 let vPublicada = null, swTexto = "";
-try {
-  const r = await fetch(base + "sw.js", { cache: "no-store" });
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  swTexto = await r.text();
-  vPublicada = (swTexto.match(/const VERSION = "([^"]+)"/) || [])[1];
-} catch (e) {
-  fallo(`no se pudo leer el sw.js publicado: ${e.message}`);
-}
 
-if (vPublicada) {
-  if (vPublicada === vLocal) bien(`versión publicada ${vPublicada} (coincide)`);
-  else fallo(`aquí ${vLocal}, publicado ${vPublicada} — ¿falta publicar, o GitHub Pages aún no ha refrescado?`);
+for (let i = 1; i <= INTENTOS; i++) {
+  try {
+    const r = await fetch(`${base}sw.js?_=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    swTexto = await r.text();
+    vPublicada = (swTexto.match(/const VERSION = "([^"]+)"/) || [])[1];
+  } catch (e) {
+    if (i === INTENTOS) { fallo(`no se pudo leer el sw.js publicado: ${e.message}`); break; }
+    console.log(`  · no responde todavía (${i}/${INTENTOS}), esperando…`);
+    await new Promise((r) => setTimeout(r, ESPERA));
+    continue;
+  }
+  if (vPublicada === vLocal) { bien(`versión publicada ${vPublicada} (coincide)`); break; }
+  if (i === INTENTOS) {
+    fallo(`aquí ${vLocal}, publicado ${vPublicada} tras ${INTENTOS} intentos — esto ya no es la espera de GitHub Pages: revisa que el push saliera bien`);
+    break;
+  }
+  console.log(`  · el sitio aún sirve ${vPublicada}, esperando a que refresque (${i}/${INTENTOS})…`);
+  await new Promise((r) => setTimeout(r, ESPERA));
 }
 
 /* --- 2. el esqueleto entero --- */
@@ -58,7 +72,7 @@ if (!shell.length) {
 } else {
   const resultados = await Promise.all(shell.map(async (ruta) => {
     try {
-      const r = await fetch(base + ruta, { method: "HEAD", cache: "no-store" });
+      const r = await fetch(`${base}${ruta}?_=${Date.now()}`, { method: "HEAD", cache: "no-store" });
       return { ruta, estado: r.status };
     } catch (e) { return { ruta, estado: 0, error: e.message }; }
   }));
@@ -74,7 +88,7 @@ if (!shell.length) {
 /* --- 3. lo mínimo para que la app arranque --- */
 for (const [ruta, que] of [["index.html", "la página"], ["manifest.webmanifest", "el manifiesto"]]) {
   try {
-    const r = await fetch(base + ruta, { cache: "no-store" });
+    const r = await fetch(`${base}${ruta}?_=${Date.now()}`, { cache: "no-store" });
     r.ok ? bien(`${que} responde`) : fallo(`${que} responde ${r.status}`);
   } catch (e) { fallo(`${que} no responde: ${e.message}`); }
 }

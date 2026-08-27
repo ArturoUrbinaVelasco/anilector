@@ -580,6 +580,13 @@
       <h3 class="continue-title" data-i18n="library.continue">▶️ Continuar</h3>
       <div id="continueRow" class="continue-row"></div>
     </section>
+    <!-- Documentos empezados. Es distinto de «Continuar»: eso son obras
+         de la biblioteca (anime, manga), y esto son archivos que estabas
+         leyendo, que hasta ahora no aparecían en ninguna parte. -->
+    <section id="docsSection" class="continue-section hidden">
+      <h3 class="continue-title" data-i18n="docs.seguir">📖 Seguir leyendo</h3>
+      <div id="docsRow" class="continue-row"></div>
+    </section>
     <div class="library-filters">
       <button class="chip active" data-libfilter="all" data-i18n="library.all">Todos</button>
       <button class="chip" data-libfilter="pending" data-i18n="library.pending">Pendiente</button>
@@ -646,6 +653,8 @@
           <span id="vPageInfo" class="page-info" title="Ir a una página">–</span>
           <button id="vNext" class="btn btn-ghost" title="Siguiente">▶</button>
           <button id="vToc" class="btn btn-ghost" title="Índice" style="display:none">☰</button>
+          <button id="vBusca" class="btn btn-ghost" title="Buscar en el documento" style="display:none">🔍</button>
+          <button id="vMarcas" class="btn btn-ghost" title="Marcadores" style="display:none">🔖</button>
           <button id="vType" class="btn btn-ghost" title="Tamaño de letra" style="display:none">🅰</button>
           <button id="vTr" class="btn btn-ghost" title="Traducir" style="display:none">🌐</button>
           <button id="vKeep" class="btn btn-ghost" title="Guardar en la app para leer sin conexión" style="display:none">📥</button>
@@ -661,6 +670,8 @@
              al pintar un documento nuevo, y así «debajo» significa debajo
              de la barra y no debajo de todo el visor. -->
         <div id="vTocPanel" class="viewer-pop viewer-toc hidden"></div>
+        <div id="vBuscaPanel" class="viewer-pop viewer-busca hidden"></div>
+        <div id="vMarcasPanel" class="viewer-pop viewer-marcas hidden"></div>
         <div id="vTypePanel" class="viewer-pop viewer-type hidden"></div>
         <div id="vTrPanel" class="viewer-pop viewer-tr hidden"></div>
       </div>

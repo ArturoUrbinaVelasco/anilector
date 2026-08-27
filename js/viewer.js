@@ -11,6 +11,8 @@ import { t } from "./i18n.js";
 import { BACKEND_URL, NO_EMBED_SITES } from "./config.js";
 import * as TR from "./translate.js";
 import * as DOCS from "./docs.js";
+import * as BUSCA from "./buscar.js";
+import * as MARCAS from "./marcas.js";
 
 const modal = () => document.getElementById("viewerModal");
 const body = () => document.getElementById("viewerBody");
@@ -39,6 +41,11 @@ const state = {
   archivoOrigen: null, // el File abierto, para poder guardarlo con 📥
   tipo: null,        // tipografía de lectura (tamaño / interlineado / ancho)
   onScroll: null,    // handler de scroll del modo MOBI (hay que quitarlo al cerrar)
+  nombreDoc: "",     // nombre y tamaño del archivo, para la estantería de «seguir leyendo»
+  tamanoDoc: 0,
+  irASeccion: null,  // navegación de los modos de texto (la pone openMobi)
+  cargarTodo: null,  // cargar el documento entero, para poder buscar en él
+  marcarPdf: null,   // { pagina, ini, fin } a resaltar sobre el dibujo del PDF
 };
 
 /* ---------- extensiones reconocidas ---------- */
@@ -264,7 +271,14 @@ function saveProgress(key, value) {
   if (!key) return;
   try {
     let p = progress();
-    p[key] = { v: value, t: Date.now() };
+    /* El nombre y el tamaño se guardan CON el progreso porque la clave es
+       una huella (`doc:1dk.13pn3ci`) y sola no dice nada: sin esto no se
+       puede listar «lo que estabas leyendo» ni volver a abrirlo. */
+    p[key] = {
+      v: value, t: Date.now(),
+      n: state.nombreDoc || p[key]?.n || "",
+      s: state.tamanoDoc || p[key]?.s || 0,
+    };
     p = podar(p);
     try {
       localStorage.setItem("anilector.progress", JSON.stringify(p));
@@ -339,7 +353,7 @@ function cambiarTipo(campo, delta) {
   pintarPanelTipo();
 }
 
-const PANELES = ["vTocPanel", "vTypePanel", "vTrPanel"];
+const PANELES = ["vTocPanel", "vTypePanel", "vTrPanel", "vBuscaPanel", "vMarcasPanel"];
 function cerrarPaneles(salvo) {
   for (const id of PANELES) {
     if (id !== salvo) document.getElementById(id)?.classList.add("hidden");
@@ -489,6 +503,258 @@ function alternarPanelIndice() {
   ).join("") + `</ol>`;
 }
 
+
+/* ============================================================
+   Buscar dentro del documento y marcadores
+   ------------------------------------------------------------
+   Las dos cosas necesitan lo mismo: SABER DÓNDE ESTÁS y PODER IR
+   a un sitio concreto. Cada formato habla su idioma —página en
+   PDF, CFI en EPUB, sección en MOBI, índice en los cómics— así que
+   la posición se guarda con su `modo` y hay un solo sitio que sabe
+   interpretarla. Un resultado de búsqueda y un marcador se navegan
+   con el mismo código.
+   ============================================================ */
+
+/* Dónde estás ahora mismo, en el idioma del formato abierto. */
+function posicionActual() {
+  switch (state.mode) {
+    case "pdf":
+      return { pos: { modo: "pdf", pagina: state.page },
+        etiqueta: `${t("reader.page")} ${state.page}` };
+    case "epub": {
+      const cfi = state.epubRendition?.currentLocation?.()?.start?.cfi;
+      return cfi ? { pos: { modo: "epub", cfi }, etiqueta: pageInfo()?.textContent || "" } : null;
+    }
+    case "images":
+      return { pos: { modo: "imagen", index: state.imgIndex },
+        etiqueta: `${state.imgIndex + 1} / ${state.images.length}` };
+    case "mobi": case "text": case "html": {
+      const doc = document.getElementById("ebookDoc") || body();
+      let sec = 0, caja = null;
+      for (const c of doc.querySelectorAll(".ebook-section")) {
+        if (c.offsetTop <= body().scrollTop + 4) { sec = Number(c.dataset.sec) || 0; caja = c; }
+        else break;
+      }
+      const off = Math.round(body().scrollTop - (caja?.offsetTop || 0));
+      return { pos: { modo: "pagina", sec, off }, etiqueta: pageInfo()?.textContent || "" };
+    }
+    default:
+      return null;
+  }
+}
+
+/* Ir a una posición, venga de una búsqueda o de un marcador. */
+async function irAPosicion(pos) {
+  if (!pos) return;
+  cerrarPaneles();
+  if (pos.modo === "pdf" && state.pdf) {
+    state.page = Math.min(Math.max(1, pos.pagina || 1), state.pdf.numPages);
+    // Los recuadros solo se pintan si el hallazgo trae su intervalo:
+    // un marcador señala una página, no un trozo de texto.
+    state.marcarPdf = pos.ini != null ? { pagina: state.page, ini: pos.ini, fin: pos.fin } : null;
+    await renderPdfPage();
+    return;
+  }
+  if (pos.modo === "epub" && state.epubRendition) {
+    try {
+      await state.epubRendition.display(pos.cfi);
+      // Subrayado nativo de epub.js: sobrevive al repintado del capítulo.
+      try {
+        state.epubRendition.annotations?.remove?.(pos.cfi, "highlight");
+        state.epubRendition.annotations?.highlight?.(pos.cfi);
+      } catch (_) {}
+    } catch (_) {}
+    return;
+  }
+  if (pos.modo === "imagen") {
+    state.imgIndex = Math.min(Math.max(0, pos.index || 0), Math.max(0, state.images.length - 1));
+    if (state.webtoon) {
+      document.querySelector(`.webtoon-page[data-i="${state.imgIndex}"]`)
+        ?.scrollIntoView({ block: "start" });
+    } else renderImage();
+    return;
+  }
+  if (pos.modo === "pagina") {
+    // Un resultado de búsqueda trae el nodo exacto; un marcador, la
+    // sección y el desplazamiento.
+    if (pos.nodo?.isConnected) {
+      if (BUSCA.resaltar(pos.nodo, pos.pos, pos.largo)) return;
+    }
+    if (state.irASeccion) await state.irASeccion(pos.sec || 0);
+    const caja = document.querySelector(`.ebook-section[data-sec="${pos.sec || 0}"]`);
+    if (caja) body().scrollTop = caja.offsetTop + (pos.off || 0);
+  }
+}
+
+/* ---------- panel de búsqueda ---------- */
+let cancelarBusqueda = null;
+
+function ajustarBotonBuscar() {
+  const b = document.getElementById("vBusca");
+  if (!b) return;
+  // En cómics e imágenes no hay texto: el botón no se ofrece.
+  b.style.display = ["pdf", "epub", "mobi", "text", "html"].includes(state.mode) ? "" : "none";
+}
+
+function alternarPanelBuscar() {
+  const panel = document.getElementById("vBuscaPanel");
+  if (!panel) return;
+  const abierto = !panel.classList.contains("hidden");
+  cerrarPaneles("vBuscaPanel");
+  panel.classList.toggle("hidden", abierto);
+  if (abierto) return;
+  if (!panel.dataset.listo) {
+    panel.innerHTML = `
+      <div class="busca-barra">
+        <input id="vBuscaInput" type="search" placeholder="${esc(t("busca.ph"))}"
+               autocomplete="off" spellcheck="false" />
+        <button id="vBuscaIr" class="btn btn-primary btn-sm">${esc(t("busca.ir"))}</button>
+      </div>
+      <p id="vBuscaEstado" class="busca-estado"></p>
+      <div id="vBuscaLista" class="busca-lista"></div>`;
+    panel.dataset.listo = "1";
+    const lanzar = () => lanzarBusqueda(document.getElementById("vBuscaInput").value);
+    document.getElementById("vBuscaIr").addEventListener("click", lanzar);
+    document.getElementById("vBuscaInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); lanzar(); }
+    });
+    document.getElementById("vBuscaLista").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-r]");
+      if (b) irAPosicion(ultimosResultados[Number(b.dataset.r)]?.ir);
+    });
+  }
+  document.getElementById("vBuscaInput")?.focus();
+}
+
+let ultimosResultados = [];
+
+async function lanzarBusqueda(consulta) {
+  const estado = document.getElementById("vBuscaEstado");
+  const lista = document.getElementById("vBuscaLista");
+  if (!estado || !lista) return;
+
+  // Una búsqueda nueva cancela la anterior: en un PDF grande la primera
+  // tarda, y no tiene sentido esperar a que acabe algo que ya no importa.
+  cancelarBusqueda?.abort();
+  const ctrl = new AbortController();
+  cancelarBusqueda = ctrl;
+
+  BUSCA.quitarResaltado();
+  lista.innerHTML = "";
+  estado.textContent = t("busca.buscando");
+
+  let r;
+  try {
+    r = await BUSCA.buscar(consulta, {
+      señal: ctrl.signal,
+      alProgreso: (hechas, total) => {
+        if (total > 8) estado.textContent = `${t("busca.buscando")} ${hechas}/${total}`;
+      },
+    });
+  } catch (e) {
+    if (!ctrl.signal.aborted) estado.textContent = t("busca.error");
+    return;
+  }
+  if (ctrl.signal.aborted) return;
+
+  if (r.corta) return void (estado.textContent = t("busca.corta"));
+  if (r.sinTexto) return void (estado.textContent = t("busca.sinTexto"));
+  if (r.escaneado) return void (estado.textContent = t("busca.escaneado"));
+
+  ultimosResultados = r.resultados;
+  if (!r.resultados.length) return void (estado.textContent = t("busca.nada"));
+  estado.textContent = t("busca.cuantos").replace("%s", String(r.resultados.length));
+  lista.innerHTML = r.resultados.map((x, i) => `
+    <button class="busca-item" data-r="${i}">
+      ${x.etiqueta ? `<span class="busca-donde">${esc(x.etiqueta)}</span>` : ""}
+      <span class="busca-txt">${esc(x.antes)}<mark>${esc(x.hallado)}</mark>${esc(x.despues)}</span>
+    </button>`).join("");
+}
+
+/* ---------- panel de marcadores ---------- */
+function ajustarBotonMarcas() {
+  const b = document.getElementById("vMarcas");
+  if (!b) return;
+  const sirve = ["pdf", "epub", "mobi", "text", "html", "images"].includes(state.mode);
+  b.style.display = sirve ? "" : "none";
+  if (!sirve) return;
+  const n = MARCAS.cuantas(state.docKey);
+  b.textContent = n ? `🔖${n}` : "🔖";
+  b.classList.toggle("activo", n > 0);
+}
+
+function alternarPanelMarcas() {
+  const panel = document.getElementById("vMarcasPanel");
+  if (!panel) return;
+  const abierto = !panel.classList.contains("hidden");
+  cerrarPaneles("vMarcasPanel");
+  panel.classList.toggle("hidden", abierto);
+  if (!abierto) pintarMarcas();
+}
+
+function pintarMarcas() {
+  const panel = document.getElementById("vMarcasPanel");
+  if (!panel || panel.classList.contains("hidden")) return;
+  const lista = MARCAS.listar(state.docKey);
+  panel.innerHTML = `
+    <button id="vMarcaNueva" class="btn btn-primary btn-sm marca-nueva">${esc(t("marca.nueva"))}</button>
+    ${lista.length ? `<div class="marca-lista">${lista.map((m) => `
+      <div class="marca" data-id="${esc(m.id)}">
+        <button class="marca-ir" data-ir="${esc(m.id)}">
+          <span class="marca-donde">${esc(m.etiqueta || "—")}</span>
+          <span class="marca-nota">${esc(m.nota || t("marca.sinNota"))}</span>
+        </button>
+        <div class="marca-acciones">
+          <button class="btn btn-ghost btn-sm" data-nota="${esc(m.id)}" title="${esc(t("marca.editar"))}">✏️</button>
+          <button class="btn btn-ghost btn-sm" data-del="${esc(m.id)}" title="${esc(t("marca.borrar"))}">🗑️</button>
+        </div>
+      </div>`).join("")}</div>`
+      : `<p class="busca-estado">${esc(t("marca.vacio"))}</p>`}`;
+
+  document.getElementById("vMarcaNueva").addEventListener("click", () => {
+    const aqui = posicionActual();
+    if (!aqui) return;
+    const m = MARCAS.añadir(state.docKey, { pos: aqui.pos, etiqueta: aqui.etiqueta });
+    if (m) { pintarMarcas(); ajustarBotonMarcas(); toastVisor(t("marca.puesta")); }
+  });
+  panel.querySelectorAll("[data-ir]").forEach((b) => b.addEventListener("click", () => {
+    const m = MARCAS.listar(state.docKey).find((x) => x.id === b.dataset.ir);
+    if (m) irAPosicion(m.pos);
+  }));
+  panel.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+    MARCAS.borrar(state.docKey, b.dataset.del);
+    pintarMarcas(); ajustarBotonMarcas();
+  }));
+  /* La nota se edita EN EL SITIO, con el mismo patrón que «ir a la
+     página»: nada de `prompt()`, que bloquea la pestaña entera y en el
+     móvil a veces ni aparece. */
+  panel.querySelectorAll("[data-nota]").forEach((b) => b.addEventListener("click", () => {
+    const fila = b.closest(".marca");
+    const hueco = fila?.querySelector(".marca-nota");
+    if (!hueco || hueco.querySelector("input")) return;
+    const m = MARCAS.listar(state.docKey).find((x) => x.id === b.dataset.nota);
+    if (!m) return;
+    hueco.innerHTML = `<input class="marca-input" type="text" maxlength="500" />`;
+    const inp = hueco.querySelector("input");
+    inp.value = m.nota || "";
+    inp.focus();
+    inp.select();
+    let cerrado = false;
+    const cerrar = (aplicar) => {
+      if (cerrado) return;
+      cerrado = true;
+      if (aplicar) MARCAS.editarNota(state.docKey, m.id, inp.value);
+      pintarMarcas();
+    };
+    inp.addEventListener("keydown", (e) => {
+      e.stopPropagation();      // que ◀ ▶ del visor no se lleven las flechas
+      if (e.key === "Enter") cerrar(true);
+      if (e.key === "Escape") cerrar(false);
+    });
+    inp.addEventListener("blur", () => cerrar(true));
+  }));
+}
+
 /* ---------- apertura / cierre ---------- */
 let origenPendiente = null;      // lo pone openLocalFile, lo recoge openModal
 
@@ -505,10 +771,21 @@ function openModal(title, { showControls = true, external = null } = {}) {
   // de tipografía lo vuelve a encender quien tenga texto que fluya.
   cerrarPaneles();
   ponerIndice([]);
-  for (const id of ["vType", "vTr", "vKeep"]) {
+  for (const id of ["vType", "vTr", "vKeep", "vBusca", "vMarcas"]) {
     const b = document.getElementById(id);
     if (b) { b.style.display = "none"; b.classList.remove("activo"); }
   }
+  // Nada del documento anterior vale para el nuevo.
+  BUSCA.reiniciarBuscador();
+  BUSCA.quitarResaltado();
+  ultimosResultados = [];
+  cancelarBusqueda?.abort();
+  cancelarBusqueda = null;
+  const panelBusca = document.getElementById("vBuscaPanel");
+  if (panelBusca) { panelBusca.innerHTML = ""; delete panelBusca.dataset.listo; }
+  state.irASeccion = null;
+  state.cargarTodo = null;
+  state.marcarPdf = null;
   state.trOn = false;
   state.trPar = null;
   state.archivoOrigen = origenPendiente;
@@ -543,10 +820,16 @@ export function closeViewer() {
   // al abrir el siguiente se ve un instante «pág. 7 de 300» de otro libro.
   const info = pageInfo();
   if (info) { info.textContent = "–"; info.title = ""; }
+  BUSCA.reiniciarBuscador();
+  BUSCA.quitarResaltado();
+  ultimosResultados = [];
+  cancelarBusqueda?.abort();
+  cancelarBusqueda = null;
   Object.assign(state, {
     mode: null, pdf: null, images: [], imgIndex: 0, imgZoom: 1,
     epubRendition: null, epubBook: null, mobiBook: null, archive: null, docKey: null,
-    archivoOrigen: null,
+    archivoOrigen: null, irASeccion: null, cargarTodo: null, marcarPdf: null,
+    nombreDoc: "", tamanoDoc: 0,
   });
   body().innerHTML = "";
 }
@@ -561,6 +844,8 @@ export async function openPdf(source, title) {
   // dirección misma, que ya identifica el documento sin ambigüedad.
   state.docKey = isUrl ? `pdf:${source}` : await huellaDe(source, title);
   if (!isUrl) migrarClaveVieja(`pdf:${title}`, state.docKey);
+  state.nombreDoc = title || source?.name || "";
+  state.tamanoDoc = isUrl ? 0 : (source?.size || 0);
   state.zoom = window.innerWidth < 720 ? 0.8 : 1.2;
 
   const pdfjsLib = window.pdfjsLib;
@@ -599,6 +884,8 @@ export async function openPdf(source, title) {
   body().appendChild(canvas);
   ajustarBotonTipo();
   ajustarBotonGuardar();
+  ajustarBotonBuscar();
+  ajustarBotonMarcas();
   await renderPdfPage();
   await indicePdf();
 }
@@ -647,7 +934,31 @@ async function renderPdfPage() {
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   canvas.style.width = `${viewport.width / (window.devicePixelRatio || 1)}px`;
-  await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+  const ctx = canvas.getContext("2d");
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  /* Lo encontrado por la búsqueda, marcado encima del dibujo. Se pintan
+     los TROZOS de texto que toca el hallazgo (pdf.js da la posición de
+     cada trozo, no de cada letra) usando la misma transformación con la
+     que se ha dibujado la página, así que cuadra a cualquier zoom. */
+  if (state.marcarPdf?.pagina === state.page) {
+    const marcas = BUSCA.trozosAMarcar(state.page, state.marcarPdf.ini, state.marcarPdf.fin);
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 214, 0, .38)";
+    for (const { it, desde, hasta } of marcas) {
+      try {
+        const m = window.pdfjsLib.Util.transform(viewport.transform, it.transform);
+        const alto = Math.hypot(m[2], m[3]) || it.height || 10;
+        const escala = Math.hypot(m[0], m[1]) / (Math.hypot(it.transform[0], it.transform[1]) || 1);
+        const anchoTotal = (it.width || 0) * escala;
+        const x = m[4] + anchoTotal * desde;
+        const ancho = anchoTotal * (hasta - desde);
+        if (ancho > 0.5) ctx.fillRect(x, m[5] - alto, ancho, alto);
+      } catch (_) { /* un trozo raro no debe romper el pintado */ }
+    }
+    ctx.restore();
+  }
+  ajustarBotonMarcas();
   pageInfo().textContent = `${t("reader.page")} ${state.page} ${t("reader.of")} ${state.pdf.numPages}`;
   pageInfo().title = t("reader.goToPage");
   saveProgress(state.docKey, { page: state.page });
@@ -692,6 +1003,8 @@ export async function openEpub(file, title) {
   // compartir el punto de lectura.
   state.docKey = await huellaDe(file, file.name);
   migrarClaveVieja(`epub:${file.name}`, state.docKey);
+  state.nombreDoc = file.name || title || "";
+  state.tamanoDoc = file.size || 0;
   // Un EPUB grande tarda en analizarse: sin esto se veía el visor en
   // blanco, sin explicación, hasta que aparecía la primera página.
   showLoader();
@@ -733,6 +1046,8 @@ export async function openEpub(file, title) {
   ajustarBotonTipo();
   ajustarBotonTr();
   ajustarBotonGuardar();
+  ajustarBotonBuscar();
+  ajustarBotonMarcas();
   aplicarTipo();
   let porcentajeListo = false;
   rendition.on("relocated", (loc) => {
@@ -826,6 +1141,8 @@ export async function openMobi(file, title) {
   state.mode = "mobi";
   state.docKey = await huellaDe(file, file.name);
   migrarClaveVieja(`mobi:${file.name}`, state.docKey);
+  state.nombreDoc = file.name || title || "";
+  state.tamanoDoc = file.size || 0;
   let book;
   try {
     const { MOBI } = await loadMobiLib();
@@ -903,6 +1220,18 @@ export async function openMobi(file, title) {
     await loadUntil(i);
     doc.querySelector(`.ebook-section[data-sec="${i}"]`)?.scrollIntoView({ block: "start" });
   }
+  // Lo que necesitan la búsqueda y los marcadores para moverse por aquí.
+  state.irASeccion = irASeccion;
+  /* Buscar exige tener el libro entero: se cargan las secciones que
+     falten en tandas grandes, avisando del avance. Es lo que pide quien
+     busca, y solo pasa la primera vez. */
+  state.cargarTodo = async (alProgreso, señal) => {
+    while (loaded < sections.length) {
+      if (señal?.aborted) return;
+      await loadNext(20);
+      alProgreso?.(loaded, sections.length);
+    }
+  };
 
   const io = new IntersectionObserver((ents) => {
     if (ents.some((e) => e.isIntersecting)) loadNext(2);
@@ -914,6 +1243,8 @@ export async function openMobi(file, title) {
   ajustarBotonTipo();
   ajustarBotonTr();
   ajustarBotonGuardar();
+  ajustarBotonBuscar();
+  ajustarBotonMarcas();
   await loadNext(3);
   aplicarTipo();
 
@@ -1023,6 +1354,8 @@ export async function openImages(pages, title) {
   try { state.webtoon = localStorage.getItem("anilector.webtoon") === "1"; } catch (_) { state.webtoon = false; }
   addWebtoonToggle();
   ajustarBotonGuardar();
+  ajustarBotonBuscar();
+  ajustarBotonMarcas();
   if (state.webtoon) return renderWebtoon();
   body().innerHTML = "";
   const img = document.createElement("img");
@@ -1566,6 +1899,8 @@ function soloLectura() {
   ajustarBotonTipo();
   ajustarBotonTr();
   ajustarBotonGuardar();
+  ajustarBotonBuscar();
+  ajustarBotonMarcas();
   aplicarTipo();
 }
 
@@ -1856,6 +2191,14 @@ export function bindViewerControls() {
   document.getElementById("vZoomOut").addEventListener("click", () => zoomBy(-0.2));
   document.getElementById("vToc")?.addEventListener("click", alternarPanelIndice);
   document.getElementById("vType")?.addEventListener("click", alternarPanelTipo);
+  document.getElementById("vBusca")?.addEventListener("click", alternarPanelBuscar);
+  document.getElementById("vMarcas")?.addEventListener("click", alternarPanelMarcas);
+  // El puente que el buscador necesita del visor.
+  BUSCA.initBuscar({
+    estado: state,
+    cuerpo: body,
+    cargarTodo: (p, s2) => state.cargarTodo?.(p, s2),
+  });
   document.getElementById("vTr")?.addEventListener("click", alternarPanelTr);
   document.getElementById("vKeep")?.addEventListener("click", guardarEnLaApp);
   document.getElementById("vTrPanel")?.addEventListener("click", (e) => {

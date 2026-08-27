@@ -19,6 +19,7 @@ const CLAVES = [
   "anilector.tvcustom", "anilector.proxyurl", "anilector.ytdur",
   "anilector.ytAutoplay", "anilector.tvmode", "anilector.webtoon",
   "anilector.readNight", "anilector.readType",
+  "anilector.marcas",
 ];
 
 function toast(msg) {
