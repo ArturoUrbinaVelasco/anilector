@@ -164,17 +164,120 @@ async function readTextSmart(blob) {
   return s;
 }
 
-/* ---------- progreso recordado ---------- */
+/* ---------- progreso recordado ----------
+   ⚠️ ESTO CRECÍA SIN LÍMITE. Cada documento abierto dejaba su entrada
+   para siempre, y `localStorage` son ~5 MB PARA TODO: biblioteca,
+   ajustes, sitios, favoritos, listas de TV. Al llenarse no falla solo
+   el progreso: deja de guardarse TODO, y encima en silencio.
+
+   Ahora cada entrada lleva la fecha del último uso y se conservan las
+   MAXIMO más recientes. Con 400, el punto de lectura de 400 documentos
+   distintos: nadie llega ahí leyendo, y el archivo no pasa de unos
+   pocos cientos de KB. */
+const MAXIMO_PROGRESO = 400;
+
 function progress() {
   try { return JSON.parse(localStorage.getItem("anilector.progress") || "{}"); }
   catch { return {}; }
 }
+
+/* Las entradas viejas son valores sueltos (un número o un CFI) y las
+   nuevas son `{v, t}`. Se leen las dos formas para no perder el punto
+   de lectura de nadie al actualizar. */
+export function valorProgreso(entrada) {
+  return entrada && typeof entrada === "object" && "v" in entrada ? entrada.v : entrada;
+}
+/* Lo que hay guardado para una clave, ya desenvuelto. */
+function leerProgreso(clave) {
+  return valorProgreso(progress()[clave]) || null;
+}
+
+/* ---------- huella de un documento local ----------
+   ⚠️ ANTES LA CLAVE DEL PDF ERA EL TÍTULO. Dos archivos distintos
+   llamados «Documento1», «scan» o «CamScanner 05-04» —que es como
+   salen del móvil y del escáner— compartían el punto de lectura: abrías
+   uno y te dejaba en la página de otro.
+
+   La huella mira el TAMAÑO y los primeros y últimos 4 KB. No es un
+   hash criptográfico y no pretende serlo: basta para que dos archivos
+   distintos no colisionen, y se calcula en milisegundos aunque el PDF
+   pese 200 MB (leer el archivo entero para esto sería absurdo). */
+export async function huellaDe(archivo, titulo = "") {
+  if (!archivo) return `doc:${titulo}`;
+  try {
+    const trozo = 4096;
+    let buffers, tam;
+    if (typeof archivo.arrayBuffer === "function") {          // File o Blob
+      tam = archivo.size;
+      const partes = [archivo.slice(0, trozo)];
+      if (tam > trozo * 2) partes.push(archivo.slice(tam - trozo));
+      buffers = await Promise.all(partes.map((b) => b.arrayBuffer()));
+    } else if (archivo.byteLength != null) {                  // ArrayBuffer o vista
+      const bytes = archivo instanceof Uint8Array ? archivo : new Uint8Array(
+        archivo.buffer || archivo, archivo.byteOffset || 0, archivo.byteLength);
+      tam = bytes.length;
+      buffers = [bytes.slice(0, trozo).buffer];
+      if (tam > trozo * 2) buffers.push(bytes.slice(tam - trozo).buffer);
+    } else {
+      return `doc:${titulo}`;
+    }
+    let h = 2166136261 >>> 0;                       // FNV-1a de 32 bits
+    for (const buf of buffers) {
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i++) {
+        h ^= bytes[i];
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+    }
+    return `doc:${tam.toString(36)}.${h.toString(36)}`;
+  } catch (_) {
+    return `doc:${titulo}`;
+  }
+}
+
+/* Al abrir con huella se mira si había progreso guardado con la clave
+   vieja (por título) y se traslada: nadie pierde por dónde iba al
+   actualizar. La entrada vieja se borra para no dejar basura. */
+function migrarClaveVieja(claveVieja, claveNueva) {
+  if (!claveVieja || claveVieja === claveNueva) return;
+  try {
+    const p = progress();
+    if (p[claveNueva] || !p[claveVieja]) return;
+    p[claveNueva] = { v: valorProgreso(p[claveVieja]), t: Date.now() };
+    delete p[claveVieja];
+    localStorage.setItem("anilector.progress", JSON.stringify(p));
+  } catch (_) {}
+}
+
+function podar(p) {
+  const claves = Object.keys(p);
+  if (claves.length <= MAXIMO_PROGRESO) return p;
+  // Sin fecha (entradas de antes de esta versión) van las primeras a la
+  // basura: son las más antiguas por definición.
+  claves.sort((a, b) => (p[b]?.t || 0) - (p[a]?.t || 0));
+  const podado = {};
+  for (const k of claves.slice(0, MAXIMO_PROGRESO)) podado[k] = p[k];
+  return podado;
+}
+
 function saveProgress(key, value) {
   if (!key) return;
   try {
-    const p = progress();
-    p[key] = value;
-    localStorage.setItem("anilector.progress", JSON.stringify(p));
+    let p = progress();
+    p[key] = { v: value, t: Date.now() };
+    p = podar(p);
+    try {
+      localStorage.setItem("anilector.progress", JSON.stringify(p));
+    } catch (e) {
+      // Si aun así no cabe, es que el problema está en otra parte del
+      // almacenamiento: se recorta a la mitad y se avisa arriba.
+      if (e?.name !== "QuotaExceededError") throw e;
+      const mitad = {};
+      for (const k of Object.keys(p).sort((a, b) => (p[b]?.t || 0) - (p[a]?.t || 0))
+        .slice(0, Math.floor(MAXIMO_PROGRESO / 2))) mitad[k] = p[k];
+      localStorage.setItem("anilector.progress", JSON.stringify(mitad));
+      window.dispatchEvent(new CustomEvent("anilector:almacenlleno"));
+    }
     window.dispatchEvent(new Event("anilector:datachanged"));
   } catch (_) {}
 }
@@ -436,6 +539,10 @@ export function closeViewer() {
   body().classList.remove("night");
   cerrarPaneles();
   ponerIndice([]);
+  // El indicador se queda con lo del documento anterior si no se limpia:
+  // al abrir el siguiente se ve un instante «pág. 7 de 300» de otro libro.
+  const info = pageInfo();
+  if (info) { info.textContent = "–"; info.title = ""; }
   Object.assign(state, {
     mode: null, pdf: null, images: [], imgIndex: 0, imgZoom: 1,
     epubRendition: null, epubBook: null, mobiBook: null, archive: null, docKey: null,
@@ -450,7 +557,10 @@ export async function openPdf(source, title) {
   openModal(title, { external: isUrl ? source : null });
   showLoader();
   state.mode = "pdf";
-  state.docKey = `pdf:${title}`;
+  // Con archivo local, la huella del contenido; con una dirección, la
+  // dirección misma, que ya identifica el documento sin ambigüedad.
+  state.docKey = isUrl ? `pdf:${source}` : await huellaDe(source, title);
+  if (!isUrl) migrarClaveVieja(`pdf:${title}`, state.docKey);
   state.zoom = window.innerWidth < 720 ? 0.8 : 1.2;
 
   const pdfjsLib = window.pdfjsLib;
@@ -480,7 +590,7 @@ export async function openPdf(source, title) {
     return showError(e.message, isUrl ? source : null, () => openPdf(source, title));
   }
 
-  state.page = progress()[state.docKey]?.page || 1;
+  state.page = leerProgreso(state.docKey)?.page || 1;
   if (state.page > state.pdf.numPages) state.page = 1;
 
   body().innerHTML = "";
@@ -578,7 +688,10 @@ function mostrarAvanceEpub(book, loc, porcentajeListo) {
 export async function openEpub(file, title) {
   openModal(title || file.name);
   state.mode = "epub";
-  state.docKey = `epub:${file.name}`;
+  // Mismo motivo que en el PDF: dos «libro.epub» distintos no deben
+  // compartir el punto de lectura.
+  state.docKey = await huellaDe(file, file.name);
+  migrarClaveVieja(`epub:${file.name}`, state.docKey);
   // Un EPUB grande tarda en analizarse: sin esto se veía el visor en
   // blanco, sin explicación, hasta que aparecía la primera página.
   showLoader();
@@ -599,7 +712,7 @@ export async function openEpub(file, title) {
     // esperando para siempre y el visor se quedaba en blanco sin decir
     // nada. Por eso hay límite de tiempo, no solo try/catch.
     book.opened?.catch?.(() => {});
-    const saved = progress()[state.docKey]?.cfi;
+    const saved = leerProgreso(state.docKey)?.cfi;
     const mostrar = async () => {
       // Si el punto guardado ya no existe (el archivo cambió), no se
       // pierde el libro entero: se abre por el principio.
@@ -634,7 +747,22 @@ export async function openEpub(file, title) {
      avanzaba. Ahora se enseña capítulo y página desde el primer momento,
      y el porcentaje se añade en cuanto está listo. */
   book.ready
-    .then(() => book.locations.generate(1000))
+    .then(async () => {
+      /* El índice no cambia nunca para un mismo archivo, así que la
+         segunda vez que abres un libro es instantáneo: se carga el que
+         se guardó. Solo si no hay nada guardado se recalcula, y se
+         guarda para la próxima. */
+      const clave = `loc:${state.docKey}`;
+      const guardado = await DOCS.leerIndiceEpub(clave);
+      if (guardado) {
+        try {
+          book.locations.load(guardado);
+          if (book.locations.length()) return;
+        } catch (_) { /* índice ilegible: se recalcula abajo */ }
+      }
+      await book.locations.generate(1000);
+      try { await DOCS.guardarIndiceEpub(clave, book.locations.save()); } catch (_) {}
+    })
     .then(() => {
       porcentajeListo = true;
       const actual = rendition.currentLocation?.();
@@ -696,7 +824,8 @@ export async function openMobi(file, title) {
   openModal(title || file.name, { showControls: false });
   showLoader();
   state.mode = "mobi";
-  state.docKey = `mobi:${file.name}`;
+  state.docKey = await huellaDe(file, file.name);
+  migrarClaveVieja(`mobi:${file.name}`, state.docKey);
   let book;
   try {
     const { MOBI } = await loadMobiLib();
@@ -834,7 +963,7 @@ export async function openMobi(file, title) {
   } catch (_) {}
 
   // Retomar donde se quedó (después de montar todo lo anterior).
-  const guardado = progress()[state.docKey];
+  const guardado = leerProgreso(state.docKey);
   if (guardado?.sec > 0 || guardado?.off > 0) {
     showLoaderFlotante();
     await irASeccion(guardado.sec || 0);
@@ -890,7 +1019,7 @@ export async function openImages(pages, title) {
   state.docKey = `img:${title}`;
   state.images = pages;
   state.imgZoom = 1;
-  state.imgIndex = Math.min(progress()[state.docKey]?.index || 0, Math.max(0, pages.length - 1));
+  state.imgIndex = Math.min(leerProgreso(state.docKey)?.index || 0, Math.max(0, pages.length - 1));
   try { state.webtoon = localStorage.getItem("anilector.webtoon") === "1"; } catch (_) { state.webtoon = false; }
   addWebtoonToggle();
   ajustarBotonGuardar();

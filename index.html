@@ -14,6 +14,128 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="preconnect" href="https://api.jikan.moe" />
   <link rel="stylesheet" href="css/styles.css" />
+  <!-- ======= RED DE SEGURIDAD DE ERRORES =======
+       Va AQUÍ, en línea y antes que nada, a propósito. Si estuviera en un
+       módulo no serviría para lo que tiene que servir: un módulo que no
+       carga o que revienta al importarse no llegaría a registrarlo, y ese
+       es justo el caso en que la app se queda en blanco sin decir nada.
+
+       Antes, cualquier excepción dejaba una vista vacía o un indicador
+       girando para siempre, y el único rastro estaba en la consola del
+       navegador. Ahora sale un aviso con qué falló y un botón que copia
+       el detalle: un fallo se cuenta con una captura, no con tres rondas
+       de preguntas.
+
+       No depende de i18n (puede ser justo lo que falló), así que lleva
+       sus dos frases dentro. -->
+  <script>
+    (function () {
+      var errores = [];
+      window.__anilectorErrores = errores;
+      var ES = document.documentElement.lang !== "en";
+      var T = {
+        titulo: ES ? "Algo ha fallado" : "Something went wrong",
+        copiar: ES ? "Copiar detalle" : "Copy details",
+        copiado: ES ? "Copiado" : "Copied",
+        recargar: ES ? "Recargar" : "Reload",
+        cerrar: ES ? "Cerrar" : "Dismiss",
+        mas: ES ? "y %s más" : "and %s more",
+      };
+
+      function apuntar(origen, mensaje, detalle) {
+        var e = {
+          origen: origen,
+          mensaje: String(mensaje || "").slice(0, 300),
+          detalle: String(detalle || "").slice(0, 2000),
+          cuando: new Date().toISOString(),
+        };
+        errores.push(e);
+        if (errores.length > 20) errores.shift();   // no crecer sin límite
+        pintar();
+      }
+
+      var caja = null;
+      function pintar() {
+        if (!document.body) {
+          document.addEventListener("DOMContentLoaded", pintar, { once: true });
+          return;
+        }
+        if (!caja) {
+          caja = document.createElement("div");
+          caja.id = "avisoError";
+          caja.className = "aviso-error";
+          // Los estilos base van en línea para que el aviso se vea aunque
+          // sea la hoja de estilos lo que no ha cargado.
+          caja.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;" +
+            "max-width:640px;margin:0 auto;padding:.8rem .9rem;border-radius:12px;" +
+            "background:#2a1620;border:1px solid #7c3049;color:#ffd9e2;" +
+            "font:14px/1.45 system-ui,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.5)";
+          document.body.appendChild(caja);
+        }
+        var ultimo = errores[errores.length - 1];
+        var extra = errores.length > 1
+          ? " <span style='opacity:.7'>(" + T.mas.replace("%s", errores.length - 1) + ")</span>" : "";
+        caja.innerHTML =
+          "<div style='font-weight:700;margin-bottom:.2rem'>⚠️ " + esc(T.titulo) + extra + "</div>" +
+          "<div style='opacity:.9;word-break:break-word'>" + esc(ultimo.mensaje) + "</div>" +
+          "<div style='margin-top:.6rem;display:flex;gap:.4rem;flex-wrap:wrap'>" +
+          "<button type='button' data-a='copiar' style='" + boton() + "'>" + esc(T.copiar) + "</button>" +
+          "<button type='button' data-a='recargar' style='" + boton() + "'>" + esc(T.recargar) + "</button>" +
+          "<button type='button' data-a='cerrar' style='" + boton() + "'>" + esc(T.cerrar) + "</button>" +
+          "</div>";
+        caja.onclick = function (ev) {
+          var b = ev.target.closest("button[data-a]");
+          if (!b) return;
+          var a = b.dataset.a;
+          if (a === "cerrar") { caja.remove(); caja = null; return; }
+          if (a === "recargar") { location.reload(); return; }
+          var texto = errores.map(function (x) {
+            return "[" + x.cuando + "] " + x.origen + ": " + x.mensaje +
+              (x.detalle ? "\n" + x.detalle : "");
+          }).join("\n\n") + "\n\nAniLector · " + location.href +
+            "\n" + navigator.userAgent;
+          copiar(texto, b);
+        };
+      }
+      function boton() {
+        return "background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);" +
+          "color:inherit;font:inherit;padding:.3rem .7rem;border-radius:999px;cursor:pointer";
+      }
+      function copiar(texto, boton) {
+        var listo = function () { boton.textContent = T.copiado; };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(texto).then(listo, function () { aPelo(texto, listo); });
+        } else { aPelo(texto, listo); }
+      }
+      // Sin permiso de portapapeles (o sin https) queda la vía de siempre.
+      function aPelo(texto, listo) {
+        var ta = document.createElement("textarea");
+        ta.value = texto;
+        ta.style.cssText = "position:fixed;opacity:0";
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); listo(); } catch (_) {}
+        ta.remove();
+      }
+      function esc(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+
+      window.addEventListener("error", function (ev) {
+        // Un <img> o un <script> que no carga dispara este mismo evento
+        // pero sin `error`: no es una excepción y no merece asustar.
+        if (!ev.error && ev.target && ev.target !== window) return;
+        apuntar("error", ev.message || (ev.error && ev.error.message),
+          (ev.error && ev.error.stack) || (ev.filename ? ev.filename + ":" + ev.lineno : ""));
+      });
+      window.addEventListener("unhandledrejection", function (ev) {
+        var r = ev.reason;
+        apuntar("promesa", (r && r.message) || String(r), r && r.stack);
+      });
+    })();
+  </script>
   <!-- JSZip va EN EL REPOSITORIO, no en un CDN: es la que abre los CBZ/ZIP
        y la que arma el CBZ al guardar, y tiene que funcionar sin conexión
        (el service worker solo puede guardar archivos de este mismo sitio). -->
@@ -644,6 +766,14 @@
           <span data-i18n="backup.import">⬆️ Importar</span>
         </label>
       </div>
+
+      <!-- Estado real de la copia sin conexión: lo rellena pwa.js
+           preguntándole al service worker, y solo dice «listo» si de
+           verdad se guardaron todos los archivos. -->
+      <div id="offlineRow" class="offline-row hidden"></div>
+
+      <!-- Espacio ocupado por lo que la app guarda en este navegador. -->
+      <div id="espacioRow" class="espacio-row hidden"></div>
 
       <div id="pwaInstallRow" class="brand-actions hidden" style="margin-top:1rem">
         <button id="pwaInstall" class="btn btn-primary" data-i18n="pwa.install">📲 Instalar la app</button>

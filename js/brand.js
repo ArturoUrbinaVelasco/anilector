@@ -116,6 +116,9 @@ function open() {
   renderPreview(b);
   modal.classList.remove("hidden");
   document.body.style.overflow = "hidden";
+  // Al abrir el panel se refresca lo que se mide: el espacio ocupado y
+  // si de verdad está lista la copia sin conexión.
+  window.dispatchEvent(new Event("anilector:panelabierto"));
 }
 function close() {
   $("brandModal").classList.add("hidden");

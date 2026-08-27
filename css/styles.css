@@ -1672,3 +1672,26 @@ button.recent-file:hover, button.recent-file:focus-visible {
   .mnav-btn { font-size: 0.6rem; }
   .cards-grid { gap: 0.5rem; }
 }
+
+/* ---------- estado sin conexión y espacio ocupado (v3.19) ---------- */
+.offline-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding: .5rem .7rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: .85rem;
+  line-height: 1.4;
+}
+.offline-row.bien { color: var(--ok, #4ade80); }
+.offline-row.mal  { color: var(--warn, #fbbf24); }
+.espacio-row {
+  margin-top: .5rem;
+  font-size: .8rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.btn-sm { padding: .25rem .7rem; font-size: .8rem; }

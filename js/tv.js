@@ -3,6 +3,7 @@
    Parser M3U + reproductor HLS (hls.js) embebido en la app.
    ============================================================ */
 import { t } from "./i18n.js";
+import { pedir } from "./red.js";
 import { M3U_LISTS, BACKEND_URL } from "./config.js";
 
 // Base del proxy (en orden de prioridad):
@@ -95,8 +96,9 @@ async function loadList(i) {
   $("tvInfo").textContent = "";
   if (cache[list.url]) { state.channels = cache[list.url]; renderGroups(); renderChannels(); renderResume(); return; }
   async function fetchM3U(u) {
-    const res = await fetch(u);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Las listas de canales son archivos grandes servidos por terceros:
+    // margen amplio, pero límite al fin y al cabo.
+    const res = await pedir(u, { limite: 20000, etiqueta: "IPTV" });
     return res.text();
   }
   try {

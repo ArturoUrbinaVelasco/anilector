@@ -4,6 +4,7 @@
    y gratuito (dominio público / licencias libres).
    ============================================================ */
 import { t } from "./i18n.js";
+import { pedirJson } from "./red.js";
 import { VOD_COLLECTIONS, RETRO_COLLECTIONS } from "./config.js";
 import { openIframe } from "./viewer.js";
 
@@ -49,9 +50,10 @@ function createCatalog(prefix, collections, unitKey, mediatypes) {
     params.set("output", "json");
 
     try {
-      const res = await fetch(`${IA}/advancedsearch.php?${params}`);
-      if (!res.ok) throw new Error(`IA ${res.status}`);
-      const data = await res.json();
+      // Con límite de tiempo y un reintento: el buscador del Internet
+      // Archive va lento a ratos y a veces devuelve 5xx pasajeros.
+      const data = await pedirJson(`${IA}/advancedsearch.php?${params}`,
+        { limite: 15000, etiqueta: "Internet Archive" });
       const docs = data.response?.docs || [];
       const numFound = data.response?.numFound || 0;
       state.items = append ? state.items.concat(docs) : docs;

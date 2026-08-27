@@ -17,7 +17,7 @@
       Es el único paso manual; sin él los navegadores seguirán con la
       copia guardada.
    ============================================================ */
-const VERSION = "v3.18.2";
+const VERSION = "v3.19.0";
 const CACHE = `anilector-${VERSION}`;
 /* Buzón de lo que te comparten desde otra app. Va aparte de la caché
    de la app porque NO debe borrarse al publicar una versión nueva. */
@@ -47,6 +47,7 @@ const SHELL = [
   "./js/webapps.js",
   "./js/youtube.js",
   "./js/pwa.js",
+  "./js/red.js",
   "./vendor/jszip/jszip.min.js",
   "./vendor/pdfjs/pdf.min.js",
   "./vendor/pdfjs/pdf.worker.min.js",
@@ -61,12 +62,38 @@ const SHELL = [
   "./icons/icon-512.png",
 ];
 
+/* Dónde se apunta lo que NO se pudo guardar. Es una respuesta más
+   dentro de la caché: sobrevive a los cierres del service worker sin
+   necesitar IndexedDB. */
+const APUNTE = "./__estado-cache";
+
+async function guardarShell(cache, lista) {
+  const fallidos = [];
+  await Promise.all(lista.map((u) => cache.add(u).catch(() => fallidos.push(u))));
+  return fallidos;
+}
+async function apuntar(cache, fallidos) {
+  await cache.put(APUNTE, new Response(JSON.stringify({ version: VERSION, faltan: fallidos }),
+    { headers: { "content-type": "application/json" } }));
+}
+async function leerApunte() {
+  try {
+    const r = await caches.match(APUNTE);
+    return r ? await r.json() : null;
+  } catch (_) { return null; }
+}
+
 self.addEventListener("install", (e) => {
   e.waitUntil((async () => {
     const c = await caches.open(CACHE);
-    // addAll falla entero si un archivo falta; se añaden de uno en uno
-    // para que un despiste no deje la app sin service worker.
-    await Promise.all(SHELL.map((u) => c.add(u).catch(() => {})));
+    /* `addAll` falla entero si un solo archivo falla, así que se añaden
+       de uno en uno para que un despiste no deje la app sin service
+       worker. Pero ANTES eso se tragaba el fallo en silencio y la app
+       decía estar lista sin conexión cuando le faltaban piezas. Ahora
+       se apunta qué faltó, se reintenta al activar y la app puede
+       preguntar y decir la verdad. */
+    const fallidos = await guardarShell(c, SHELL);
+    await apuntar(c, fallidos);
     self.skipWaiting();      // la versión nueva no espera a que cierres pestañas
   })());
 });
@@ -81,14 +108,51 @@ self.addEventListener("activate", (e) => {
       .filter((n) => n.startsWith("anilector-") && n !== CACHE && n !== CACHE_COMPARTIR)
       .map((n) => caches.delete(n)));
     await self.clients.claim();
+
+    // Segundo intento con lo que faltó: muchas veces es un corte de red
+    // de un segundo durante la instalación y a la siguiente entra.
+    const apunte = await leerApunte();
+    let faltan = apunte?.faltan || [];
+    if (faltan.length) {
+      const cache = await caches.open(CACHE);
+      faltan = await guardarShell(cache, faltan);
+      await apuntar(cache, faltan);
+    }
+
     // Avisar a las pestañas abiertas de que hay versión nueva.
     const clientes = await self.clients.matchAll({ type: "window" });
-    for (const c of clientes) c.postMessage({ tipo: "sw-actualizado", version: VERSION });
+    for (const c of clientes) {
+      c.postMessage({ tipo: "sw-actualizado", version: VERSION, faltan: faltan.length });
+    }
   })());
 });
 
 self.addEventListener("message", (e) => {
   if (e.data?.tipo === "saltar-espera") self.skipWaiting();
+
+  // La app pregunta si de verdad está lista para funcionar sin conexión.
+  if (e.data?.tipo === "estado-cache") {
+    e.waitUntil((async () => {
+      const apunte = await leerApunte();
+      const faltan = apunte?.faltan || [];
+      e.source?.postMessage({
+        tipo: "estado-cache", version: VERSION,
+        total: SHELL.length, faltan,
+      });
+    })());
+  }
+
+  // Reintento a petición: el botón «volver a intentarlo» del panel.
+  if (e.data?.tipo === "reintentar-cache") {
+    e.waitUntil((async () => {
+      const cache = await caches.open(CACHE);
+      const apunte = await leerApunte();
+      const faltan = await guardarShell(cache, apunte?.faltan || []);
+      await apuntar(cache, faltan);
+      e.source?.postMessage({ tipo: "estado-cache", version: VERSION,
+        total: SHELL.length, faltan });
+    })());
+  }
 });
 
 /* Estrategias:

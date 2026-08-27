@@ -23,7 +23,9 @@
    ============================================================ */
 
 const BD = "anilector-docs";
-const VERSION = 1;
+/* v2 añade `epubloc`: el índice de posiciones de los EPUB, que tarda
+   segundos en calcularse y no cambia nunca para un mismo archivo. */
+const VERSION = 2;
 let bd = null;
 
 function abrir() {
@@ -35,6 +37,7 @@ function abrir() {
       const d = pet.result;
       if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta", { keyPath: "id" });
       if (!d.objectStoreNames.contains("blobs")) d.createObjectStore("blobs");
+      if (!d.objectStoreNames.contains("epubloc")) d.createObjectStore("epubloc");
     };
     pet.onsuccess = () => { bd = pet.result; resolver(bd); };
     pet.onerror = () => rechazar(pet.error || new Error("IndexedDB"));
@@ -152,6 +155,33 @@ export async function pedirPersistencia() {
   } catch (_) {
     return false;
   }
+}
+
+/* ---------- índice de posiciones de los EPUB ----------
+   `locations.generate()` de epub.js tarda ~3 s en un libro de 30
+   capítulos, y lo hacía EN CADA APERTURA: hasta que termina no hay
+   porcentaje (devuelve 0, que fue el «siempre 0%» de v3.12). Para un
+   archivo dado el resultado es siempre el mismo, así que se guarda.
+
+   Va en IndexedDB y no en localStorage porque son decenas de KB de
+   texto por libro: en localStorage se comería el sitio de todo lo demás.
+   La clave incluye la huella del archivo, así que un libro distinto
+   nunca reutiliza el índice de otro. */
+export async function leerIndiceEpub(clave) {
+  if (!hayAlmacen() || !clave) return null;
+  try {
+    const tx = await transaccion(["epubloc"], "readonly");
+    const r = await esperar(tx.objectStore("epubloc").get(clave));
+    return r?.datos || null;
+  } catch (_) { return null; }
+}
+export async function guardarIndiceEpub(clave, datos) {
+  if (!hayAlmacen() || !clave || !datos) return false;
+  try {
+    const tx = await transaccion(["epubloc"], "readwrite");
+    await esperar(tx.objectStore("epubloc").put({ datos, cuando: Date.now() }, clave));
+    return true;
+  } catch (_) { return false; }
 }
 
 export function tamanoLegible(n) {

@@ -38,6 +38,7 @@
      entienden el primero, y cada servidor ignora el que no conoce.
    ============================================================ */
 import { t } from "./i18n.js";
+import { pedir, ErrorDeRed } from "./red.js";
 
 const CLAVE = "anilector.server";
 const POR_PAGINA = 48;
@@ -103,13 +104,26 @@ async function llamar(c, ruta, params = {}) {
   const url = `${c.url}${ruta}${qs.toString() ? "?" + qs : ""}`;
   let res;
   try {
-    res = await fetch(url, opciones);
+    /* Sin reintento: aquí se tantean a propósito rutas y formas de
+       mandar la clave, y un 404 o un 401 son RESPUESTAS, no fallos —
+       repetirlos solo alargaría la espera. Lo que sí hace falta es el
+       límite de tiempo: un servidor de casa que acepta la conexión y
+       se queda callado dejaba el indicador girando para siempre. */
+    res = await pedir(url, { ...opciones, limite: 15000, reintentos: 0 });
   } catch (e) {
+    // Un plantón se dice tal cual; lo demás son los tres sospechosos
+    // de siempre (clave, contenido mixto, CORS).
+    if (e instanceof ErrorDeRed && e.agotado) {
+      const err = new Error(e.message);
+      err.diagnostico = true;
+      err.agotado = true;
+      throw err;
+    }
     // Aquí caen también los preflight rechazados: el navegador no
     // cuenta nada más que «Failed to fetch».
+    if (e?.estado) throw fallo({ estado: e.estado }, c.url);
     throw fallo({ red: true }, c.url);
   }
-  if (!res.ok) throw fallo({ estado: res.status }, c.url);
   return res.status === 204 ? null : res.json();
 }
 

@@ -92,7 +92,43 @@ function registrarSW() {
   });
   navigator.serviceWorker.addEventListener("message", (e) => {
     if (e.data?.tipo === "sw-actualizado") toast(t("pwa.updated"));
+    if (e.data?.tipo === "estado-cache") pintarEstadoCache(e.data);
   });
+
+  // Se pregunta en cuanto haya alguien a quien preguntar.
+  navigator.serviceWorker.ready.then(() => preguntarEstadoCache()).catch(() => {});
+}
+
+/* ---------- ¿de verdad funciona sin conexión? ----------
+   El service worker guarda los archivos de uno en uno para que un fallo
+   suelto no lo tumbe entero, pero eso hacía que la app dijera estar
+   lista sin conexión cuando le faltaban piezas — y solo se descubría
+   al quedarse sin red, que es el peor momento. Ahora se pregunta y se
+   dice la verdad, con un botón para reintentar lo que falte. */
+function alSW(mensaje) {
+  navigator.serviceWorker?.controller?.postMessage(mensaje);
+}
+export function preguntarEstadoCache() { alSW({ tipo: "estado-cache" }); }
+
+function pintarEstadoCache({ total = 0, faltan = [] }) {
+  const fila = $("offlineRow");
+  if (!fila) return;
+  fila.classList.remove("hidden");
+  const bien = !faltan.length;
+  fila.className = "offline-row " + (bien ? "bien" : "mal");
+  fila.innerHTML = bien
+    ? `<span>✅ ${esc(t("offline.listo").replace("%s", String(total)))}</span>`
+    : `<span>⚠️ ${esc(t("offline.faltan").replace("%s", String(faltan.length)))}</span>
+       <button id="offlineRetry" class="btn btn-ghost btn-sm">${esc(t("offline.reintentar"))}</button>`;
+  $("offlineRetry")?.addEventListener("click", (ev) => {
+    ev.currentTarget.disabled = true;
+    ev.currentTarget.textContent = t("offline.reintentando");
+    alSW({ tipo: "reintentar-cache" });
+  });
+}
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 /* ---------- botón de instalar ---------- */

@@ -21,7 +21,7 @@ import { initServidor, ensureServidorLoaded, pausarServidor } from "./servervist
 import { initWebApps } from "./webapps.js";
 import { initBrand } from "./brand.js";
 import { initTvMode } from "./tvmode.js";
-import { initPwa } from "./pwa.js";
+import { initPwa, preguntarEstadoCache } from "./pwa.js";
 import * as DOCS from "./docs.js";
 import { initEntradas } from "./entradas.js";
 
@@ -1163,6 +1163,56 @@ function syncStickyOffsets() {
 }
 
 /* ---------- arranque ---------- */
+/* ---------- cuánto sitio ocupa esto ----------
+   El almacenamiento del navegador no es infinito y hasta ahora no había
+   forma de saber cuánto quedaba: el primer aviso llegaba cuando ya no
+   cabía nada. Se enseña al abrir el panel, con las tres cosas que
+   ocupan de verdad. */
+async function pintarEspacio() {
+  const fila = $("espacioRow");
+  if (!fila) return;
+  let textos = [];
+
+  // Lo que la app guarda en localStorage (biblioteca, progreso, ajustes).
+  let bytes = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k?.startsWith("anilector.")) continue;
+      bytes += k.length + (localStorage.getItem(k) || "").length;
+    }
+  } catch (_) {}
+  textos.push(`${t("espacio.datos")}: ${DOCS.tamanoLegible(bytes * 2)}`);
+
+  // Los archivos descargados, que es lo que de verdad pesa.
+  try {
+    const usado = await DOCS.espacioUsado();
+    if (usado) textos.push(`${t("espacio.descargas")}: ${DOCS.tamanoLegible(usado)}`);
+  } catch (_) {}
+
+  // Y lo que el navegador dice que queda, si lo dice.
+  try {
+    const q = await navigator.storage?.estimate?.();
+    if (q?.quota) {
+      const pct = Math.round((q.usage / q.quota) * 100);
+      textos.push(`${t("espacio.total")}: ${DOCS.tamanoLegible(q.usage)} / ${DOCS.tamanoLegible(q.quota)} (${pct}%)`);
+    }
+  } catch (_) {}
+
+  fila.textContent = textos.join(" · ");
+  fila.classList.remove("hidden");
+}
+
+function engancharMedidas() {
+  window.addEventListener("anilector:panelabierto", () => {
+    pintarEspacio();
+    preguntarEstadoCache();
+  });
+  // El visor avisa cuando ha tenido que recortar el progreso por falta
+  // de sitio: eso el usuario tiene que saberlo, no arreglarse solo.
+  window.addEventListener("anilector:almacenlleno", () => toast(t("misc.storageFull")));
+}
+
 function init() {
   const theme = localStorage.getItem("anilector.theme") || "dark";
   document.documentElement.dataset.theme = theme;
@@ -1194,6 +1244,7 @@ function init() {
   initVod();
   initRetro();
   initServidor();
+  engancharMedidas();
   initYouTube();
   initWebApps();
   initBrand();
