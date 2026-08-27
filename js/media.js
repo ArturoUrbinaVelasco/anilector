@@ -150,10 +150,6 @@ const RUTAS = {
     (u) => ["/Items", { userId: u }],
     (u) => [`/Users/${u}/Items`, {}],
   ],
-  vistas: [
-    (u) => ["/UserViews", { userId: u }],
-    (u) => [`/Users/${u}/Views`, {}],
-  ],
 };
 const rutaElegida = {};
 
@@ -200,10 +196,24 @@ export async function diagnostico(url, key) {
     pasos.push({ etiqueta: t("srv.pasoResponde"), ok: false, detalle: e.message });
     return { ok: false, pasos };
   }
-  const producto = info?.ProductName || "Jellyfin/Emby";
+  /* Que conteste un JSON no significa que sea un servidor de medios:
+     cualquier API contesta algo. Un Jellyfin o un Emby siempre traen
+     `Version` y alguno de sus campos propios; si no, es otra cosa y más
+     vale decirlo aquí que fallar tres pasos después sin explicación. */
+  const pareceServidor = !!info && typeof info === "object" && !!info.Version &&
+    ["Id", "ServerName", "ProductName", "OperatingSystem", "StartupWizardCompleted", "LocalAddress"]
+      .some((k) => k in info);
+  if (!pareceServidor) {
+    pasos.push({
+      etiqueta: t("srv.pasoResponde"), ok: false,
+      detalle: `${t("srv.errNoJelly")} ${queContesto(info)}`,
+    });
+    return { ok: false, pasos };
+  }
+  const producto = info.ProductName || "Jellyfin/Emby";
   pasos.push({
     etiqueta: t("srv.pasoResponde"), ok: true,
-    detalle: `${info?.ServerName || "?"} · ${producto} ${info?.Version || ""}`.trim(),
+    detalle: `${info.ServerName || "?"} · ${producto} ${info.Version || ""}`.trim(),
   });
 
   /* 2) ¿Acepta la clave? Esta petición SÍ está autenticada — es la que
@@ -249,16 +259,23 @@ export async function diagnostico(url, key) {
   } catch (_) { /* se sigue sin usuario, ver abajo */ }
   cfg.sinUsuario = !cfg.userId;
 
-  let libs = [];
+  let libs = [], ultimaRespuesta = null;
   try {
-    const v = await vistasDe(cfg);
-    libs = v?.Items || [];
+    const r = await vistasDe(cfg);
+    libs = r.libs;
+    ultimaRespuesta = r.crudo;
   } catch (e) {
     pasos.push({ etiqueta: t("srv.pasoBiblio"), ok: false, detalle: e.message });
     return { ok: false, pasos };
   }
   if (!libs.length) {
-    pasos.push({ etiqueta: t("srv.pasoBiblio"), ok: false, detalle: t("srv.sinBiblio") });
+    // Se dice QUÉ contestó: distinguir «una lista vacía» de «algo que no
+    // es una lista» es la diferencia entre un permiso y un servidor que
+    // no es el que se cree.
+    pasos.push({
+      etiqueta: t("srv.pasoBiblio"), ok: false,
+      detalle: `${t("srv.sinBiblio")} ${queContesto(ultimaRespuesta)}`,
+    });
     return { ok: false, pasos };
   }
   pasos.push({
@@ -271,15 +288,65 @@ export async function diagnostico(url, key) {
 }
 
 /* ---------- API del servidor ---------- */
-/* Bibliotecas. Con usuario, las suyas; sin usuario, las carpetas de
-   medios del servidor — que es lo que hay cuando la clave no lista
-   usuarios. */
+/* Bibliotecas: CUATRO vías, porque cada tipo de servidor y cada tipo de
+   credencial devuelve algo distinto, y una lista vacía no es un error
+   del que haya que rendirse.
+
+     1. /UserViews?userId=      las vistas del usuario (Jellyfin ≥10.9)
+     2. /Users/{id}/Views       lo mismo en Emby y Jellyfin 10.8
+     3. /Library/MediaFolders   las carpetas del servidor, sin usuario
+     4. /Library/VirtualFolders las bibliotecas configuradas (admin)
+
+   Con una clave de API —que no es el token de una sesión de usuario—
+   hay servidores donde las vistas del usuario llegan VACÍAS aunque las
+   bibliotecas existan. Por eso, si una vía contesta bien pero sin nada,
+   se sigue con la siguiente en vez de dar el fallo por definitivo.
+   Devuelve `{ libs, crudo }`: `crudo` es lo último que contestó el
+   servidor, y sirve para explicar en pantalla por qué no hay nada. */
 async function vistasDe(cfg) {
   const c = cfg || leerConfig();
-  if (c.userId) return pedirRuta("vistas", c.userId, {}, c);
-  return llamar(c, "/Library/MediaFolders");
+  const vias = [];
+  if (c.userId) {
+    vias.push(() => llamar(c, "/UserViews", { userId: c.userId }));
+    vias.push(() => llamar(c, `/Users/${c.userId}/Views`));
+  }
+  vias.push(() => llamar(c, "/Library/MediaFolders"));
+  vias.push(() => llamar(c, "/Library/VirtualFolders"));
+
+  let crudo = null, ultimo = null;
+  for (const via of vias) {
+    let r;
+    try { r = await via(); } catch (e) { ultimo = e; continue; }
+    crudo = r;
+    const libs = normalizarVistas(r);
+    if (libs.length) return { libs, crudo };
+  }
+  if (!crudo && ultimo) throw ultimo;
+  return { libs: [], crudo };
 }
-export const bibliotecas = () => vistasDe(null);
+/* `/Library/VirtualFolders` devuelve un array con otra forma: el id de
+   la biblioteca viene en `ItemId`, no en `Id`. Se normaliza para que el
+   resto del código no tenga que saberlo. */
+function normalizarVistas(r) {
+  const lista = Array.isArray(r) ? r : (r?.Items || []);
+  return lista
+    .filter((v) => v && (v.Id || v.ItemId))
+    .map((v) => ({ ...v, Id: v.Id || v.ItemId }));
+}
+/* Un resumen de lo que contestó el servidor, sin sacar datos de nadie:
+   solo los nombres de los campos y cuántos elementos traía la lista. */
+function queContesto(r) {
+  if (r == null) return "";
+  if (Array.isArray(r)) return t("srv.contesto").replace("%s", `lista(${r.length})`);
+  if (typeof r !== "object") return t("srv.contesto").replace("%s", String(r).slice(0, 40));
+  const campos = Object.keys(r).slice(0, 6).map((k) =>
+    Array.isArray(r[k]) ? `${k}(${r[k].length})` : k);
+  return t("srv.contesto").replace("%s", campos.join(", ") || "{}");
+}
+export const bibliotecas = async () => {
+  const { libs } = await vistasDe(null);
+  return { Items: libs };
+};
 
 export function portada(id, tag) {
   const c = leerConfig();
