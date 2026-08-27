@@ -155,3 +155,27 @@ Tus favoritos, progreso de lectura y preferencias se guardan **solo en tu navega
 
 ---
 Hecho con ❤️ para lectores y otakus.
+
+---
+
+## 🛠️ Para desarrollar y probar
+
+```bash
+npm install                        # solo Playwright, para las pruebas
+npx playwright install chromium
+
+npm start                          # http://localhost:8765
+npm test                           # las 432 pruebas, con resumen
+```
+
+- **[`RETOMAR.md`](RETOMAR.md)** — clonar en otro equipo, probar a mano, pasar
+  las pruebas, publicar y en qué estado está todo. **Empieza por ahí.**
+- **[`ARQUITECTURA.md`](ARQUITECTURA.md)** — cómo está hecho y por qué: los
+  tres almacenes del navegador, las decisiones que conviene no deshacer y las
+  cosas del navegador que costó descubrir.
+- **[`pruebas-servidor/LEEME.md`](pruebas-servidor/LEEME.md)** — un Jellyfin de
+  mentira para probar «Mi servidor» sin tener uno, con interruptores para
+  romperlo a propósito.
+
+⚠️ **Al publicar, sube el `VERSION` de `sw.js`**: sin eso los navegadores
+siguen sirviendo la copia guardada. `publicar.ps1` lo hace solo.

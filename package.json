@@ -1,0 +1,17 @@
+{
+  "name": "anilector",
+  "version": "3.20.0",
+  "private": true,
+  "description": "AniLector — anime, manga, libros, TV en vivo y tu propio servidor, en una PWA sin compilación.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node pruebas/todas.mjs",
+    "fixtures": "node pruebas/fixtures.mjs",
+    "servidor-de-pruebas": "node pruebas-servidor/jellyfin-de-pruebas.mjs",
+    "comprobar": "node comprobar-publicado.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}
