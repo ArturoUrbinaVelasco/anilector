@@ -131,6 +131,7 @@
   <!-- ======= NAVEGACIÓN PRINCIPAL ======= -->
   <nav class="main-nav" role="tablist">
     <button class="nav-tab active" data-view="tv">📺 <span data-i18n="nav.tv">TV en vivo</span></button>
+    <button class="nav-tab" data-view="server">🖧 <span data-i18n="nav.server">Mi servidor</span></button>
     <button class="nav-tab" data-view="vod">🎬 <span data-i18n="nav.vod">Películas</span></button>
     <button class="nav-tab" data-view="retro">📼 <span data-i18n="nav.retro">Series retro</span></button>
     <button class="nav-tab" data-view="yt">▶️ <span data-i18n="nav.yt">YouTube</span></button>
@@ -288,6 +289,87 @@
     <div id="vodCats" class="cat-chips-scroll"></div>
     <div id="vodGrid" class="cards-grid"></div>
     <div class="load-more"><button id="vodMore" class="btn btn-primary hidden" data-i18n="search.loadMore">Cargar más</button></div>
+  </main>
+
+  <!-- ======= VISTA: MI SERVIDOR (Jellyfin / Emby) =======
+       Ninguna dirección va escrita aquí: la escribe el usuario en el
+       panel de conexión y se guarda en localStorage. -->
+  <main id="viewServer" class="view hidden">
+    <h2 class="view-title" data-i18n="srv.title">🖧 Mi servidor</h2>
+    <p class="tv-note" data-i18n="srv.note">Conecta AniLector a tu propio Jellyfin o Emby para ver tus películas, tus series y, si tu servidor la tiene, su TV en vivo. Nada de esto viene configurado: la dirección y la clave las pones tú.</p>
+
+    <!-- Panel de conexión -->
+    <section class="srv-config">
+      <button id="srvConfigToggle" class="srv-config-head" aria-expanded="false">
+        <span>⚙️ <span data-i18n="srv.conn">Conexión</span></span>
+        <span class="srv-caret">▾</span>
+      </button>
+      <div id="srvConfigBody" class="srv-config-body hidden">
+        <div class="srv-fields">
+          <label class="srv-field">
+            <span data-i18n="srv.baseUrl">URL de tu servidor</span>
+            <input id="srvUrl" type="url" placeholder="https://mi-servidor.example:8096" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="srv-field">
+            <span data-i18n="srv.apiKey">Clave de API</span>
+            <input id="srvKey" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="srv-field srv-field-sm">
+            <span data-i18n="srv.user">Usuario</span>
+            <select id="srvUser" disabled><option value="">—</option></select>
+          </label>
+        </div>
+        <div class="srv-actions">
+          <button id="srvProbar" class="btn btn-ghost" data-i18n="srv.test">Probar conexión</button>
+          <button id="srvGuardar" class="btn btn-primary" data-i18n="srv.save">Guardar</button>
+          <button id="srvBorrar" class="btn btn-ghost hidden" data-i18n="srv.borrar">Borrar conexión</button>
+        </div>
+        <p id="srvStatus" class="srv-status"></p>
+        <details class="srv-help">
+          <summary data-i18n="srv.helpTitle">¿Cómo saco la clave de API?</summary>
+          <ol>
+            <li data-i18n="srv.help1">En tu Jellyfin, entra en el panel de administración.</li>
+            <li data-i18n="srv.help2">Ve a «Claves de API» y crea una nueva con el nombre AniLector.</li>
+            <li data-i18n="srv.help3">Cópiala aquí. Puedes revocarla desde el mismo sitio cuando quieras.</li>
+          </ol>
+          <p data-i18n="srv.helpCors">Si dice que no se puede conectar y la dirección es correcta, a tu servidor le falta permitir que otra web lea sus respuestas. Se arregla añadiendo la cabecera <code>Access-Control-Allow-Origin</code> en el proxy que tengas delante.</p>
+        </details>
+      </div>
+    </section>
+
+    <!-- Aviso cuando no hay nada configurado -->
+    <div id="srvEmpty" class="empty-state">
+      <div class="empty-icon">🖧</div>
+      <p data-i18n="srv.empty">Todavía no has conectado ningún servidor. Abre «Conexión», escribe la dirección de tu Jellyfin y su clave de API, y aquí aparecerán tus películas y series.</p>
+    </div>
+
+    <!-- Catálogo -->
+    <div id="srvCatalogo" class="hidden">
+      <div id="srvPlayer" class="tv-player hidden">
+        <div class="tv-player-bar">
+          <span id="srvNow" class="tv-now">—</span>
+          <div class="tv-player-actions">
+            <button id="srvCerrarPlayer" class="btn btn-ghost btn-mini" data-i18n="srv.close">Cerrar</button>
+          </div>
+        </div>
+        <video id="srvVideo" controls playsinline></video>
+      </div>
+
+      <div class="cat-toolbar">
+        <button id="srvBack" class="btn btn-ghost hidden">←</button>
+        <input id="srvSearch" type="search" data-i18n-placeholder="srv.searchPh" placeholder="Buscar en tu servidor…" />
+        <select id="srvSort" class="select-mini">
+          <option value="SortName" data-i18n="sort.name">Nombre (A-Z)</option>
+          <option value="DateCreated" data-i18n="srv.sortAdded">Añadido hace poco</option>
+          <option value="ProductionYear" data-i18n="sort.newest">Año</option>
+          <option value="CommunityRating" data-i18n="order.score">Calificación</option>
+        </select>
+        <span id="srvInfo" class="results-info"></span>
+      </div>
+      <div id="srvLibs" class="cat-chips-scroll"></div>
+      <div id="srvGrid" class="cards-grid"></div>
+      <div class="load-more"><button id="srvMore" class="btn btn-primary hidden" data-i18n="search.loadMore">Cargar más</button></div>
+    </div>
   </main>
 
   <!-- ======= VISTA: SERIES RETRO ======= -->
@@ -482,6 +564,7 @@
   <div id="moreSheet" class="more-sheet hidden">
     <div class="more-card">
       <div class="more-grab"></div>
+      <button class="more-item" data-mview="server"><span>🖧</span><span data-i18n="nav.server">Mi servidor</span></button>
       <button class="more-item" data-mview="vod"><span>🎬</span><span data-i18n="nav.vod">Películas</span></button>
       <button class="more-item" data-mview="retro"><span>📼</span><span data-i18n="nav.retro">Series retro</span></button>
       <button class="more-item" data-mview="web"><span>🌐</span><span data-i18n="nav.web">Sitios</span></button>

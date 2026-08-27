@@ -17,6 +17,7 @@ import { initAuth } from "./auth.js";
 import { initTv, ensureTvLoaded, pauseTv, countChannelMatches, applyChannelSearch } from "./tv.js";
 import { initYouTube, searchYouTubeFor } from "./youtube.js";
 import { initVod, ensureVodLoaded, initRetro, ensureRetroLoaded } from "./vod.js";
+import { initServidor, ensureServidorLoaded, pausarServidor } from "./servervista.js";
 import { initWebApps } from "./webapps.js";
 import { initBrand } from "./brand.js";
 import { initTvMode } from "./tvmode.js";
@@ -245,6 +246,7 @@ function cardHTML(item, { library = false } = {}) {
 function showView(view) {
   S.view = view;
   $("viewTv").classList.toggle("hidden", view !== "tv");
+  $("viewServer").classList.toggle("hidden", view !== "server");
   $("viewVod").classList.toggle("hidden", view !== "vod");
   $("viewRetro").classList.toggle("hidden", view !== "retro");
   $("viewYt").classList.toggle("hidden", view !== "yt");
@@ -264,7 +266,7 @@ function showView(view) {
     const mv = b.dataset.mview;
     // Películas, Series retro, Sitios y Visor viven dentro de «Más»:
     // con cualquiera de ellas abierta, el marcado es ese botón.
-    const enMas = ["web", "reader", "vod", "retro"].includes(view);
+    const enMas = ["web", "reader", "vod", "retro", "server"].includes(view);
     const active = mv ? mv === view : enMas;
     b.classList.toggle("active", active);
   });
@@ -275,6 +277,8 @@ function showView(view) {
   // app: son dos consultas a Internet Archive que no todo el mundo usa.
   if (view === "vod") ensureVodLoaded();
   if (view === "retro") ensureRetroLoaded();
+  if (view === "server") ensureServidorLoaded();
+  else pausarServidor();   // no dejar vídeo sonando en segundo plano
   if (view === "tv") ensureTvLoaded();
   else pauseTv(); // no reproducir en segundo plano
 }
@@ -1189,6 +1193,7 @@ function init() {
   initTv();
   initVod();
   initRetro();
+  initServidor();
   initYouTube();
   initWebApps();
   initBrand();
