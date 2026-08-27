@@ -454,6 +454,41 @@ button.recent-file:hover, button.recent-file:focus-visible {
   color: var(--text);
 }
 
+/* ---------- catálogos de Internet Archive (Películas / Series retro) ----------
+   Las fichas de categoría existían solo dentro de la media query del
+   móvil; aquí se les dan estilos base porque estas vistas las usan
+   sueltas y en cualquier tamaño de pantalla. */
+.cat-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.cat-toolbar input[type="search"] {
+  flex: 1 1 14rem;
+  min-width: 0;
+  background: var(--bg-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.8rem;
+  font: inherit;
+}
+.cat-toolbar .results-info { margin-left: auto; white-space: nowrap; }
+#vodCats, #retroCats {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+#vodCats::-webkit-scrollbar, #retroCats::-webkit-scrollbar { display: none; }
+#vodCats .chip, #retroCats .chip { white-space: nowrap; flex: none; }
+.vod-card { cursor: pointer; }
+.vod-card .card-cover { background: var(--bg-soft); }
+
 /* ---------- libros: acceso, bibliotecas de México y estanterías ---------- */
 .card-acceso { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem; }
 .ac-chip, .fmt-chip {

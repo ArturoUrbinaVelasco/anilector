@@ -131,6 +131,8 @@
   <!-- ======= NAVEGACIÓN PRINCIPAL ======= -->
   <nav class="main-nav" role="tablist">
     <button class="nav-tab active" data-view="tv">📺 <span data-i18n="nav.tv">TV en vivo</span></button>
+    <button class="nav-tab" data-view="vod">🎬 <span data-i18n="nav.vod">Películas</span></button>
+    <button class="nav-tab" data-view="retro">📼 <span data-i18n="nav.retro">Series retro</span></button>
     <button class="nav-tab" data-view="yt">▶️ <span data-i18n="nav.yt">YouTube</span></button>
     <button class="nav-tab" data-view="web">🌐 <span data-i18n="nav.web">Sitios</span></button>
     <button class="nav-tab" data-view="search" data-cat="anime">🎞️ <span data-i18n="nav.anime">Anime</span></button>
@@ -269,6 +271,44 @@
   </main>
 
   <!-- ======= VISTA: SITIOS (navegador integrado) ======= -->
+  <!-- ======= VISTA: PELÍCULAS ======= -->
+  <main id="viewVod" class="view hidden">
+    <h2 class="view-title" data-i18n="vod.title">🎬 Películas</h2>
+    <p class="tv-note" data-i18n="vod.note">Catálogo gratuito y legal de Internet Archive (dominio público y licencias libres).</p>
+    <div class="cat-toolbar">
+      <input id="vodSearch" type="search" data-i18n-placeholder="vod.searchPh" placeholder="Buscar película…" />
+      <select id="vodSort" class="select-mini">
+        <option value="downloads desc" data-i18n="sort.popular">Populares</option>
+        <option value="titleSorter asc" data-i18n="sort.name">Nombre (A-Z)</option>
+        <option value="year desc" data-i18n="sort.newest">Más recientes</option>
+        <option value="year asc" data-i18n="sort.oldest">Más antiguos</option>
+      </select>
+      <span id="vodInfo" class="results-info"></span>
+    </div>
+    <div id="vodCats" class="cat-chips-scroll"></div>
+    <div id="vodGrid" class="cards-grid"></div>
+    <div class="load-more"><button id="vodMore" class="btn btn-primary hidden" data-i18n="search.loadMore">Cargar más</button></div>
+  </main>
+
+  <!-- ======= VISTA: SERIES RETRO ======= -->
+  <main id="viewRetro" class="view hidden">
+    <h2 class="view-title" data-i18n="retro.title">📼 Series retro</h2>
+    <p class="tv-note" data-i18n="retro.note">TV clásica y series de dominio público del Internet Archive (gratis y legal).</p>
+    <div class="cat-toolbar">
+      <input id="retroSearch" type="search" data-i18n-placeholder="retro.searchPh" placeholder="Buscar serie…" />
+      <select id="retroSort" class="select-mini">
+        <option value="downloads desc" data-i18n="sort.popular">Populares</option>
+        <option value="titleSorter asc" data-i18n="sort.name">Nombre (A-Z)</option>
+        <option value="year desc" data-i18n="sort.newest">Más recientes</option>
+        <option value="year asc" data-i18n="sort.oldest">Más antiguos</option>
+      </select>
+      <span id="retroInfo" class="results-info"></span>
+    </div>
+    <div id="retroCats" class="cat-chips-scroll"></div>
+    <div id="retroGrid" class="cards-grid"></div>
+    <div class="load-more"><button id="retroMore" class="btn btn-primary hidden" data-i18n="search.loadMore">Cargar más</button></div>
+  </main>
+
   <main id="viewWeb" class="view hidden">
     <h2 class="view-title" data-i18n="web.title">🌐 Sitios</h2>
     <p class="tv-note" data-i18n="web.note">Abre un sitio dentro de AniLector. Usa el motor del navegador con el que abres la app: para Brave (open source), abre AniLector en Brave. Algunos sitios no permiten mostrarse embebidos; ahí usa el botón de pestaña nueva.</p>
@@ -442,6 +482,8 @@
   <div id="moreSheet" class="more-sheet hidden">
     <div class="more-card">
       <div class="more-grab"></div>
+      <button class="more-item" data-mview="vod"><span>🎬</span><span data-i18n="nav.vod">Películas</span></button>
+      <button class="more-item" data-mview="retro"><span>📼</span><span data-i18n="nav.retro">Series retro</span></button>
       <button class="more-item" data-mview="web"><span>🌐</span><span data-i18n="nav.web">Sitios</span></button>
       <button class="more-item" data-mview="reader"><span>👓</span><span data-i18n="nav.reader">Visor</span></button>
       <button class="more-item" id="brandBtnM"><span>🎨</span><span data-i18n="brand.title">Personalizar</span></button>

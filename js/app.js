@@ -16,6 +16,7 @@ import { BOOK_SITES_SHOWN, MX_LIBRARIES } from "./config.js";
 import { initAuth } from "./auth.js";
 import { initTv, ensureTvLoaded, pauseTv, countChannelMatches, applyChannelSearch } from "./tv.js";
 import { initYouTube, searchYouTubeFor } from "./youtube.js";
+import { initVod, ensureVodLoaded, initRetro, ensureRetroLoaded } from "./vod.js";
 import { initWebApps } from "./webapps.js";
 import { initBrand } from "./brand.js";
 import { initTvMode } from "./tvmode.js";
@@ -244,6 +245,8 @@ function cardHTML(item, { library = false } = {}) {
 function showView(view) {
   S.view = view;
   $("viewTv").classList.toggle("hidden", view !== "tv");
+  $("viewVod").classList.toggle("hidden", view !== "vod");
+  $("viewRetro").classList.toggle("hidden", view !== "retro");
   $("viewYt").classList.toggle("hidden", view !== "yt");
   $("viewWeb").classList.toggle("hidden", view !== "web");
   $("viewSearch").classList.toggle("hidden", view !== "search");
@@ -259,12 +262,19 @@ function showView(view) {
   // viven en «Más», así que ahí se marca ese botón.
   document.querySelectorAll(".mnav-btn").forEach((b) => {
     const mv = b.dataset.mview;
-    const active = mv ? mv === view : (view === "web" || view === "reader");
+    // Películas, Series retro, Sitios y Visor viven dentro de «Más»:
+    // con cualquiera de ellas abierta, el marcado es ese botón.
+    const enMas = ["web", "reader", "vod", "retro"].includes(view);
+    const active = mv ? mv === view : enMas;
     b.classList.toggle("active", active);
   });
   document.querySelectorAll("[data-catchip]").forEach((c) =>
     c.classList.toggle("active", c.dataset.catchip === S.cat));
   if (view === "library") renderLibrary();
+  // Los catálogos se piden la primera vez que entras, no al arrancar la
+  // app: son dos consultas a Internet Archive que no todo el mundo usa.
+  if (view === "vod") ensureVodLoaded();
+  if (view === "retro") ensureRetroLoaded();
   if (view === "tv") ensureTvLoaded();
   else pauseTv(); // no reproducir en segundo plano
 }
@@ -1177,6 +1187,8 @@ function init() {
   bindEvents();
   ajustarFiltrosPorCat();
   initTv();
+  initVod();
+  initRetro();
   initYouTube();
   initWebApps();
   initBrand();

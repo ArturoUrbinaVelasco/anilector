@@ -17,7 +17,7 @@
       Es el único paso manual; sin él los navegadores seguirán con la
       copia guardada.
    ============================================================ */
-const VERSION = "v3.15.0";
+const VERSION = "v3.16.0";
 const CACHE = `anilector-${VERSION}`;
 /* Buzón de lo que te comparten desde otra app. Va aparte de la caché
    de la app porque NO debe borrarse al publicar una versión nueva. */
@@ -36,6 +36,7 @@ const SHELL = [
   "./js/config.js",
   "./js/i18n.js",
   "./js/tv.js",
+  "./js/vod.js",
   "./js/tvmode.js",
   "./js/docs.js",
   "./js/entradas.js",
