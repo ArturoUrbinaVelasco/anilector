@@ -2,3 +2,5 @@
 Thumbs.db
 node_modules/
 _to_delete/
+# herramienta de escritorio para probar «Mi servidor»: no forma parte de la app
+pruebas-servidor/
