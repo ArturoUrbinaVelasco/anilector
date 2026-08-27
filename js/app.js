@@ -12,7 +12,7 @@ import {
   openLocalFiles, openLocalFile, openUrl, openIframe, openImages, openGoogleBook,
   closeViewer, bindViewerControls, openRemoteFile,
 } from "./viewer.js";
-import { BOOK_SITES_SHOWN } from "./config.js";
+import { BOOK_SITES_SHOWN, MX_LIBRARIES } from "./config.js";
 import { initAuth } from "./auth.js";
 import { initTv, ensureTvLoaded, pauseTv, countChannelMatches, applyChannelSearch } from "./tv.js";
 import { initYouTube, searchYouTubeFor } from "./youtube.js";
@@ -185,6 +185,30 @@ function countsText(item) {
 }
 
 /* ---------- tarjetas ---------- */
+/* Etiqueta de acceso en la tarjeta: de un vistazo se ve qué puedes leer
+   ya y qué no. Solo tiene sentido en libros. */
+const ETIQUETA_ACCESO = {
+  libre:    { cls: "ac-libre",    icono: "🆓", clave: "access.free" },
+  prestamo: { cls: "ac-prestamo", icono: "🔁", clave: "access.borrow" },
+  previa:   { cls: "ac-previa",   icono: "👁️", clave: "access.preview" },
+  pago:     { cls: "ac-pago",     icono: "💲", clave: "access.paid" },
+  // Sin etiqueta, un libro sin copia digital parecía simplemente uno al
+  // que se le olvidó la suya: mejor decirlo.
+  no:       { cls: "ac-no",       icono: "📕", clave: "access.none" },
+};
+function accesoHTML(item) {
+  if (item.cat !== "book") return "";
+  const e = ETIQUETA_ACCESO[item.acceso];
+  const formatos = (item.formatos || [])
+    .map((f) => `<span class="fmt-chip">${f === "online" ? t("fmt.online") : f.toUpperCase()}</span>`)
+    .join("");
+  if (!e && !formatos) return "";
+  return `<div class="card-acceso">
+    ${e ? `<span class="ac-chip ${e.cls}">${e.icono} ${t(e.clave)}</span>` : ""}
+    ${formatos}
+  </div>`;
+}
+
 function cardHTML(item, { library = false } = {}) {
   const cover = item.cover
     ? `<img class="card-cover" loading="lazy" src="${esc(item.cover)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'card-cover placeholder',textContent:'📕'}))" />`
@@ -210,6 +234,7 @@ function cardHTML(item, { library = false } = {}) {
         ${item.authors?.length ? `<span>✍️ ${esc(item.authors[0])}</span>` : ""}
       </div>
       <div class="card-counts">${countsText(item)}</div>
+      ${accesoHTML(item)}
       ${statusSel}
     </div>
   </article>`;
@@ -256,6 +281,12 @@ async function runSearch({ append = false } = {}) {
     status: $("statusSelect").value,
     page: append ? S.page + 1 : 1,
   };
+  if (S.cat === "books") {
+    params.access = $("accessSelect").value;
+    params.lang = $("bookLangSelect").value;
+    params.fmt = $("fmtSelect").value;
+    params.author = $("authorInput").value.trim();
+  }
   if (!append) { S.items = []; $("resultsGrid").innerHTML = ""; }
   $("emptyState").classList.add("hidden");
   $("loader").classList.remove("hidden");
@@ -419,7 +450,9 @@ async function openDetail(id) {
             ${bs.map((s) =>
               `<button class="btn btn-ghost watch-site" data-booksite data-url="${esc(s.url)}" data-title="${esc(d.title)} — ${esc(s.site)}">📖 ${esc(s.site)}${esc(shortLang(s.language))}</button>`).join("")}
           </div>
-        </div>`;
+        </div>
+        ${estanteria(t("book.collection").replace("%s", d.coleccion?.nombre || ""), d.coleccion?.items)}
+        ${estanteria(t("book.moreByAuthor").replace("%s", d.authors?.[0] || ""), d.masDelAutor)}`;
       }
       // Proveedores OFICIALES con licencia que reportan Jikan/AniList:
       // anime (Crunchyroll, Netflix, HIDIVE…) y también manga (MANGA Plus,
@@ -482,6 +515,16 @@ async function openDetail(id) {
     toggleLib(d);
     openDetail(id); // re-render
   });
+  /* Estanterías: abrir otro libro sin salir. `openDetail` busca la obra
+     en S.items, así que primero hay que meterla ahí. */
+  box.querySelectorAll(".estante-item").forEach((b) =>
+    b.addEventListener("click", () => {
+      const otro = [...(d.masDelAutor || []), ...(d.coleccion?.items || [])]
+        .find((x) => x.id === b.dataset.id);
+      if (!otro) return;
+      if (!S.items.some((x) => x.id === otro.id)) S.items.push(otro);
+      openDetail(otro.id);
+    }));
   box.querySelectorAll("[data-readia]").forEach((b) =>
     b.addEventListener("click", () =>
       openIframe(`https://archive.org/embed/${b.dataset.readia}`, b.dataset.title)));
@@ -798,6 +841,40 @@ function renderRecent() {
         : `<div class="recent-file" title="${t("reader.recentLocal")}">📄 ${esc(r)}</div>`).join("")
     : "";
 }
+/* Estantería horizontal de libros dentro de una ficha («Más de este
+   autor», «Otros tomos»). Si no hay nada, no se pinta el hueco. */
+function estanteria(titulo, items) {
+  if (!items?.length) return "";
+  return `
+  <div class="detail-section">
+    <h3>${esc(titulo)}</h3>
+    <div class="estante">
+      ${items.map((b) => `
+        <button class="estante-item" data-id="${esc(b.id)}" title="${esc(b.title)}">
+          <img loading="lazy" src="${esc(b.cover)}" alt="" />
+          <span>${esc(b.title)}</span>
+          ${b.year ? `<small>${b.year}</small>` : ""}
+        </button>`).join("")}
+    </div>
+  </div>`;
+}
+
+/* ---------- filtros y bibliotecas: solo en libros ---------- */
+function ajustarFiltrosPorCat() {
+  const libros = S.cat === "books";
+  document.querySelectorAll(".solo-libros").forEach((e) => e.classList.toggle("hidden", !libros));
+  document.querySelectorAll(".solo-otros").forEach((e) => e.classList.toggle("hidden", libros));
+  $("mxLibs").classList.toggle("hidden", !libros);
+}
+
+function renderMxLibs() {
+  $("mxLibsList").innerHTML = MX_LIBRARIES.map((b) => `
+    <a class="mx-lib" href="${esc(b.url)}" target="_blank" rel="noopener">
+      <span class="mx-lib-name">${esc(b.name)} ↗</span>
+      <span class="mx-lib-tema">${esc(b.tema)}</span>
+    </a>`).join("");
+}
+
 /* ---------- Mis descargas (documentos guardados en el aparato) ---------- */
 async function renderDescargas() {
   const caja = $("descargasBox");
@@ -873,16 +950,36 @@ function bindEvents() {
   $("toggleFilters").addEventListener("click", () =>
     $("filtersPanel").classList.toggle("hidden"));
   $("clearFilters").addEventListener("click", () => {
-    ["genreSelect", "yearSelect", "orderSelect", "statusSelect"].forEach((id) => ($(id).selectedIndex = 0));
+    ["genreSelect", "yearSelect", "orderSelect", "statusSelect", "bookLangSelect", "fmtSelect"]
+      .forEach((id) => ($(id).selectedIndex = 0));
+    // «Disponibilidad» vuelve a Gratis, que es el arranque por defecto.
+    $("accessSelect").value = "libre";
+    $("authorInput").value = "";
+    if (S.view === "search") runSearch();
   });
-  ["genreSelect", "yearSelect", "orderSelect", "statusSelect"].forEach((id) =>
+  ["genreSelect", "yearSelect", "orderSelect", "statusSelect",
+   "accessSelect", "bookLangSelect", "fmtSelect"].forEach((id) =>
     $(id).addEventListener("change", () => { if (S.view === "search") runSearch(); }));
+  // El autor es un campo de texto: se busca al pulsar Enter o al salir.
+  $("authorInput").addEventListener("change", () => { if (S.view === "search") runSearch(); });
+  $("authorInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); if (S.view === "search") runSearch(); }
+  });
+
+  // Bibliotecas de México
+  renderMxLibs();
+  $("mxLibsToggle").addEventListener("click", () => {
+    const abierto = !$("mxLibsBody").classList.toggle("hidden");
+    $("mxLibsToggle").setAttribute("aria-expanded", String(abierto));
+    $("mxLibsToggle").querySelector(".mx-libs-caret").textContent = abierto ? "▴" : "▾";
+  });
 
   // Cambiar de categoría (anime/manga/libros) desde donde sea.
   async function gotoCat(cat) {
     const changed = S.cat !== cat;
     S.cat = cat;
     showView("search");
+    ajustarFiltrosPorCat();
     // Sin await: loadGenres ya resetea el selector de inmediato y la
     // búsqueda no debe esperar a los géneros (con Jikan lento dejaba
     // los resultados de la categoría anterior en pantalla).
@@ -1078,6 +1175,7 @@ function init() {
   renderRecent();
   renderDescargas();
   bindEvents();
+  ajustarFiltrosPorCat();
   initTv();
   initYouTube();
   initWebApps();

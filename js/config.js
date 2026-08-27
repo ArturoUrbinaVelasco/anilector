@@ -54,20 +54,82 @@ export const MANGA_SITES = [
    solo cuestión de corregir su URL AQUÍ (el resto del código no cambia).
    Marcados con (?) los que conviene revisar primero.
    ------------------------------------------------------------ */
+/* Buscadores de bibliotecas libres. `%s` es el término buscado.
+
+   ESTADO DE COMPROBACIÓN (27/08/2026). Se revisaron una por una:
+   · Standard Ebooks: COMPROBADO devolviendo resultados.
+   · Textos.info: ESTABA ROTO. Su buscador va por RUTA (`/buscar/quijote`),
+     no por parámetro (`?texto=`), que solo devolvía el formulario vacío.
+     Corregido y comprobado: 8 resultados para «quijote».
+   · PlanetaLibro: ESTABA ROTO y se quitó. `?s=` devolvía la portada, no
+     resultados; su buscador real es JavaScript y no tiene una dirección
+     enlazable. Mejor ninguno que uno que no busca.
+   · El resto NO SE PUDO COMPROBAR desde aquí (unos bloquean robots, otros
+     pintan los resultados con JavaScript, otros responden 403 a un
+     lector automático), pero todos los sitios siguen vivos. No es lo
+     mismo «comprobado que falla» que «no se pudo comprobar»: solo se
+     tocó lo primero. */
 export const BOOK_SITES = [
   { name: "Elejandría",        lang: "ES", url: "https://www.elejandria.com/buscar?q=%s" },
-  { name: "Textos.info",       lang: "ES", url: "https://www.textos.info/buscar?texto=%s" },      // (?)
-  { name: "Cervantes Virtual", lang: "ES", url: "https://www.cervantesvirtual.com/buscador/?q=%s" }, // (?)
+  { name: "Textos.info",       lang: "ES", url: "https://www.textos.info/buscar/%s" },
+  { name: "Cervantes Virtual", lang: "ES", url: "https://www.cervantesvirtual.com/buscador/?q=%s" },
   { name: "Wikisource",        lang: "ES", url: "https://es.wikisource.org/w/index.php?search=%s" },
-  { name: "PlanetaLibro",      lang: "ES", url: "https://planetalibro.net/?s=%s" },               // (?)
   { name: "Gutenberg",         lang: "ES/EN", url: "https://www.gutenberg.org/ebooks/search/?query=%s" },
   { name: "Standard Ebooks",   lang: "EN", url: "https://standardebooks.org/ebooks?query=%s" },
   { name: "Internet Archive",  lang: "ES/EN", url: "https://archive.org/search?query=%s" },
   { name: "LibriVox 🔊",       lang: "ES/EN", url: "https://librivox.org/search?q=%s&search_form=advanced" },
   { name: "Europeana",         lang: "ES/EN", url: "https://www.europeana.eu/es/search?query=%s" },
-  { name: "BNE Hispánica",     lang: "ES", url: "https://bdh.bne.es/bnesearch/Search.do?text=%s" }, // (?)
-  { name: "Ganso y Pulpo",     lang: "ES", url: "https://gansoypulpo.com/?s=%s" },                 // (?)
+  { name: "BNE Hispánica",     lang: "ES", url: "https://bdh.bne.es/bnesearch/Search.do?text=%s" },
   { name: "Google Libros",     lang: "ES/EN", url: "https://www.google.com/search?tbm=bks&q=%s" },
+];
+
+/* ------------------------------------------------------------
+   BIBLIOTECAS ABIERTAS DE MÉXICO
+   Instituciones públicas con libros completos, gratis y legales.
+
+   ⚠️ NINGUNA permite consultar su catálogo desde otra web (no hay API
+   con CORS), así que estas NO devuelven resultados dentro de AniLector:
+   son destinos que se abren en una pestaña. Por eso no llevan `%s`.
+
+   Todas las direcciones de esta lista se ABRIERON Y COMPROBARON el
+   27/08/2026. Donde el buscador del sitio no era enlazable (JavaScript
+   o 403), se enlaza la portada o el índice que sí respondió, en vez de
+   inventar una URL de búsqueda — que es justo el error que se cometió
+   en v3.7 con las direcciones marcadas «(?)».
+
+   COMPROBADAS Y DESCARTADAS, para que nadie las vuelva a añadir:
+   · Repositorio Nacional CONAHCYT → certificado SSL caducado (avisaría
+     de sitio inseguro).
+   · Hemeroteca Nacional Digital → certificado inválido.
+   · Biblioteca Digital Mexicana → solo HTTP, daría contenido mixto.
+   · Medigraphic y Repositorio IPN → no se pudieron comprobar.
+   · libros.colmex.mx y Casa de Libros Abiertos UAM → son TIENDAS.
+   · elem.mx → fichas de obras, no las obras.
+   · bidi.unam.mx → recursos por suscripción, no acceso abierto.
+   ------------------------------------------------------------ */
+export const MX_LIBRARIES = [
+  { name: "Libros OA UNAM",        tema: "Universitario · PDF, EPUB y audio",
+    url: "https://librosoa.unam.mx/browse?type=subject" },
+  { name: "Libros de Texto SEP",   tema: "Escuela y docentes · leer en línea",
+    url: "https://libros.conaliteg.gob.mx/" },
+  { name: "Material de Lectura UNAM", tema: "Cuento y poesía · PDF",
+    url: "https://materialdelectura.unam.mx/cuento-contemporaneo" },
+  { name: "Contigo en la Distancia", tema: "Infantil y cuentos · descargables",
+    url: "https://contigoenladistancia.cultura.gob.mx/lista/categoria/libro-descargable" },
+  { name: "Biblioteca Jurídica UNAM", tema: "Derecho · 6.900 libros en PDF",
+    url: "https://biblio.juridicas.unam.mx/bjv" },
+  { name: "SciELO México",         tema: "Medicina y ciencia · revistas",
+    url: "https://www.scielo.org.mx/scielo.php?script=sci_alphabetic&lng=es&nrm=iso" },
+  { name: "INEHRM",                tema: "Historia de México · PDF",
+    url: "https://inehrm.gob.mx/es/inehrm/Libros_Digitales" },
+  { name: "Repositorio COLMEX",    tema: "Ciencias sociales · 4.600 libros",
+    url: "https://repositorio.colmex.mx/" },
+  { name: "Biblioteca ILCE",       tema: "Infantil y juvenil",
+    url: "https://bibliotecadigital.ilce.edu.mx/" },
+  { name: "Redalyc",               tema: "Revistas académicas",
+    url: "https://www.redalyc.org/" },
+  { name: "Descarga Cultura UNAM 🔊", tema: "Audiolibros y conferencias",
+    url: "https://descargacultura.unam.mx/" },
 ];
 /* Cuántos botones de la lista de arriba se muestran en la ficha. */
 export const BOOK_SITES_SHOWN = 9;

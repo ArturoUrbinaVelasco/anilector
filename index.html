@@ -81,7 +81,42 @@
         <option value="title" data-i18n="order.title">Título (A-Z)</option>
       </select>
     </div>
-    <div class="filter-group">
+    <!-- Filtros que solo tienen sentido en libros -->
+    <div class="filter-group solo-libros hidden">
+      <label data-i18n="filter.access">Disponibilidad</label>
+      <select id="accessSelect">
+        <option value="libre" data-i18n="access.free">Gratis para leer</option>
+        <option value="prestamo" data-i18n="access.borrow">En préstamo</option>
+        <option value="pago" data-i18n="access.paid">De pago</option>
+        <option value="" data-i18n="access.all">Todo (gratis primero)</option>
+      </select>
+    </div>
+    <div class="filter-group solo-libros hidden">
+      <label data-i18n="filter.lang">Idioma</label>
+      <select id="bookLangSelect">
+        <option value="" data-i18n="filter.any">Cualquiera</option>
+        <option value="es">Español</option>
+        <option value="en">Inglés</option>
+        <option value="pt">Portugués</option>
+        <option value="fr">Francés</option>
+        <option value="de">Alemán</option>
+        <option value="it">Italiano</option>
+      </select>
+    </div>
+    <div class="filter-group solo-libros hidden">
+      <label data-i18n="filter.format">Formato</label>
+      <select id="fmtSelect">
+        <option value="" data-i18n="filter.any">Cualquiera</option>
+        <option value="online" data-i18n="fmt.online">Leer en línea</option>
+        <option value="epub">EPUB</option>
+        <option value="pdf">PDF</option>
+      </select>
+    </div>
+    <div class="filter-group solo-libros hidden">
+      <label data-i18n="filter.author">Autor</label>
+      <input id="authorInput" type="search" placeholder="Julio Cortázar" />
+    </div>
+    <div class="filter-group solo-otros">
       <label data-i18n="filter.status">Estado</label>
       <select id="statusSelect">
         <option value="" data-i18n="filter.any">Cualquiera</option>
@@ -269,6 +304,18 @@
       <button class="chip chip-filters" id="toggleFiltersM" title="Filtros">⚙️</button>
     </div>
     <div id="crossLinks" class="cross-links hidden"></div>
+    <!-- Bibliotecas abiertas de México: se abren fuera, porque ninguna
+         deja consultar su catálogo desde otra web. -->
+    <section id="mxLibs" class="mx-libs hidden">
+      <button id="mxLibsToggle" class="mx-libs-head" aria-expanded="false">
+        <span>🇲🇽 <span data-i18n="mx.title">Bibliotecas abiertas de México</span></span>
+        <span class="mx-libs-caret">▾</span>
+      </button>
+      <div id="mxLibsBody" class="mx-libs-body hidden">
+        <p class="mx-libs-help" data-i18n="mx.help">Instituciones públicas con libros completos y gratis. Se abren en una pestaña: no dejan buscar su catálogo desde aquí.</p>
+        <div id="mxLibsList" class="mx-libs-list"></div>
+      </div>
+    </section>
     <div id="resultsInfo" class="results-info"></div>
     <div id="resultsGrid" class="cards-grid"></div>
     <div id="loadMoreWrap" class="load-more hidden">

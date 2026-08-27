@@ -206,13 +206,39 @@ async function alFetchNode(cat, id) {
 const genreCache = {};
 export async function getGenres(cat) {
   if (cat === "books") {
-    // Open Library usa "subjects" libres: lista curada de los más comunes.
+    /* Open Library usa «subjects» libres en INGLÉS: la clave que se manda
+       es la inglesa, pero se enseña en español. Antes la lista era en
+       inglés y no incluía las materias que más se piden aquí (cuentos,
+       docencia, medicina, derecho). */
     return [
-      "fantasy", "science fiction", "romance", "mystery", "horror",
-      "adventure", "history", "biography", "poetry", "philosophy",
-      "psychology", "self-help", "comics", "manga", "young adult",
-      "children", "thriller", "drama", "classics", "art",
-    ].map((s) => ({ id: s, name: s.replace(/\b\w/g, (c) => c.toUpperCase()) }));
+      ["short stories", "Cuentos"],
+      ["children", "Infantil"],
+      ["juvenile fiction", "Juvenil"],
+      ["education", "Docencia y educación"],
+      ["medicine", "Medicina"],
+      ["law", "Derecho"],
+      ["history", "Historia"],
+      ["mexico", "México"],
+      ["poetry", "Poesía"],
+      ["fiction", "Novela"],
+      ["fantasy", "Fantasía"],
+      ["science fiction", "Ciencia ficción"],
+      ["mystery", "Misterio"],
+      ["horror", "Terror"],
+      ["romance", "Romance"],
+      ["adventure", "Aventuras"],
+      ["biography", "Biografía"],
+      ["philosophy", "Filosofía"],
+      ["psychology", "Psicología"],
+      ["science", "Ciencia"],
+      ["mathematics", "Matemáticas"],
+      ["technology", "Tecnología"],
+      ["cooking", "Cocina"],
+      ["art", "Arte"],
+      ["comics", "Cómic"],
+      ["manga", "Manga"],
+      ["classics", "Clásicos"],
+    ].map(([id, name]) => ({ id, name }));
   }
   if (animeProvider === "anilist") return AL_GENRES.map((n) => ({ id: n, name: n }));
   if (genreCache[cat]) return genreCache[cat];
@@ -280,13 +306,25 @@ function normOpenLib(d) {
     authors: d.author_name || [],
     ia: (d.ia && d.ia[0]) || null, // identificador de Internet Archive → lectura embebida
     hasFulltext: !!d.has_fulltext,
+    // Open Library trae los idiomas en código de 3 letras (spa, eng…);
+    // dentro de la app se usan los de 2 para que casen con Google Books.
+    idiomas: (d.language || []).map((c) => A2[c] || c),
+    acceso: ACCESO_OL[d.ebook_access] || (d.ia ? "libre" : "no"),
+    formatos: d.ia ? ["online"] : [],
   };
 }
+const A2 = { spa: "es", eng: "en", por: "pt", fre: "fr", fra: "fr", ger: "de", deu: "de", ita: "it" };
+const ACCESO_OL = {
+  public: "libre",        // se lee entero y gratis
+  borrowable: "prestamo", // hay que pedirlo prestado en Internet Archive
+  printdisabled: "no",    // solo para personas con discapacidad lectora
+  no_ebook: "no",
+};
 
 /* ---------- Búsqueda ---------- */
 export async function search(args) {
-  const { cat, q, genre, year, order, status, page = 1 } = args;
-  if (cat === "books") return searchBooks({ q, genre, year, order, page });
+  const { cat, q, genre, year, order, status, page = 1, lang, access, fmt, author } = args;
+  if (cat === "books") return searchBooks({ q, genre, year, order, page, lang, access, fmt, author });
   if (animeProvider === "anilist") return searchAniList(args);
   try {
     return await searchJikan({ cat, q, genre, year, order, status, page });
@@ -340,19 +378,48 @@ async function searchJikan({ cat, q, genre, year, order, status, page }) {
   };
 }
 
-async function searchBooks({ q, genre, year, order, page }) {
+/* ---------- Libros ----------
+   Dos catálogos, y cada uno sabe algo que el otro no:
+   · Open Library dice si un libro se puede LEER GRATIS, si es prestable
+     o si no hay copia digital (`ebook_access`), y es el mejor catálogo
+     de obras libres. No sabe nada de precios.
+   · Google Books es el único que distingue GRATIS de DE PAGO y el que
+     dice si hay EPUB o PDF descargable.
+   Por eso la fuente se elige según lo que pidas, no al azar.
+
+   ⚠️ Los filtros se aplican ADEMÁS del lado de la app, sobre los datos
+   que vienen en cada resultado. No es desconfianza gratuita: estas dos
+   APIs no se pueden probar desde el entorno donde se desarrolla, así que
+   si algún día una ignorara un filtro (o cambiara su significado), tú
+   verías resultados equivocados sin enterarte. Con la comprobación
+   local, en el peor caso ves menos resultados, nunca los incorrectos. */
+const ISO3 = { es: "spa", en: "eng", pt: "por", fr: "fre", de: "ger", it: "ita" };
+
+async function searchBooks(args) {
+  const { access = "libre", fmt = "" } = args;
+  // Google Books es el único que sabe de precios y de EPUB/PDF.
+  const necesitaGoogle = access === "pago" || fmt === "epub" || fmt === "pdf";
+  return necesitaGoogle ? searchGoogleBooks(args) : searchOpenLibrary(args);
+}
+
+async function searchOpenLibrary({ q, genre, year, order, page, lang, access = "libre", fmt, author }) {
   const params = new URLSearchParams();
-  let query = q || "";
-  if (genre) query += ` subject:"${genre}"`;
-  if (year) query += ` first_publish_year:${year}`;
-  if (!query.trim()) query = "subject:fiction";
-  params.set("q", query.trim());
+  const partes = [];
+  if (q) partes.push(q);
+  if (author) partes.push(`author:"${author}"`);
+  if (genre) partes.push(`subject:"${genre}"`);
+  if (year) partes.push(`first_publish_year:${year}`);
+  if (lang && ISO3[lang]) partes.push(`language:${ISO3[lang]}`);
+  if (access === "libre") partes.push("ebook_access:public");
+  else if (access === "prestamo") partes.push("ebook_access:borrowable");
+  // Sin nada que buscar, algo hay que enseñar: lo libre y popular.
+  if (!partes.length) partes.push("ebook_access:public");
+  params.set("q", partes.join(" ").trim());
   params.set("page", page);
   params.set("limit", 24);
-  params.set(
-    "fields",
-    "key,title,author_name,first_publish_year,cover_i,edition_count,subject,ia,has_fulltext,ratings_average,number_of_pages_median"
-  );
+  params.set("fields",
+    "key,title,author_name,first_publish_year,cover_i,edition_count,subject,ia," +
+    "has_fulltext,ratings_average,number_of_pages_median,language,ebook_access");
   if (order === "newest") params.set("sort", "new");
   else if (order === "score") params.set("sort", "rating");
   else if (order === "title") params.set("sort", "title");
@@ -361,10 +428,127 @@ async function searchBooks({ q, genre, year, order, page }) {
   const res = await fetch(`${OPENLIB}/search.json?${params}`);
   if (!res.ok) throw new Error(`OpenLibrary ${res.status}`);
   const data = await res.json();
+
+  let items = (data.docs || []).map(normOpenLib);
+  items = filtrarEnLaApp(items, { lang, access, fmt });
+  if (order === "relevance" || !order) items = libresPrimero(items);
   return {
-    items: (data.docs || []).map(normOpenLib),
+    items,
     hasMore: page * 24 < (data.numFound || 0),
     total: data.numFound ?? null,
+    fuente: "openlibrary",
+  };
+}
+
+async function searchGoogleBooks({ q, genre, year, order, page, lang, access, fmt, author }) {
+  const partes = [];
+  if (q) partes.push(q);
+  if (author) partes.push(`inauthor:"${author}"`);
+  if (genre) partes.push(`subject:"${genre}"`);
+  if (!partes.length) partes.push(genre ? "" : "libros");
+
+  const params = new URLSearchParams();
+  params.set("q", partes.join(" ").trim());
+  params.set("maxResults", "24");
+  params.set("startIndex", String((page - 1) * 24));
+  if (lang) params.set("langRestrict", lang);
+  if (access === "pago") params.set("filter", "paid-ebooks");
+  else if (fmt === "epub" || fmt === "pdf") params.set("filter", "free-ebooks");
+  // `download=epub` es el ÚNICO valor admitido por esta API.
+  if (fmt === "epub") params.set("download", "epub");
+  if (order === "newest") params.set("orderBy", "newest");
+
+  const res = await fetch(`${GBOOKS}/volumes?${params}`);
+  if (!res.ok) throw new Error(`Google Books ${res.status}`);
+  const data = await res.json();
+
+  let items = (data.items || []).map(normGBooks).filter(Boolean);
+  // El año no es un filtro de esta API: se recorta aquí.
+  if (year) items = items.filter((i) => String(i.year || "") === String(year));
+  items = filtrarEnLaApp(items, { lang, access, fmt });
+  if (order === "relevance" || !order) items = libresPrimero(items);
+  return {
+    items,
+    hasMore: (data.items || []).length === 24,
+    total: data.totalItems ?? null,
+    fuente: "gbooks",
+  };
+}
+
+/* La red de seguridad: repasa cada resultado con lo que él mismo declara. */
+function filtrarEnLaApp(items, { lang, access, fmt }) {
+  return items.filter((i) => {
+    if (lang && i.idiomas?.length && !i.idiomas.includes(lang)) return false;
+    if (access === "libre" && i.acceso !== "libre") return false;
+    if (access === "prestamo" && i.acceso !== "prestamo") return false;
+    if (access === "pago" && i.acceso !== "pago") return false;
+    if (fmt && !(i.formatos || []).includes(fmt)) return false;
+    return true;
+  });
+}
+
+/* «Primero todo lo que haya libre»: gratis arriba, luego prestables,
+   luego vista previa y al final lo de pago. Dentro de cada grupo se
+   respeta el orden que trajo el catálogo. */
+const PESO_ACCESO = { libre: 0, prestamo: 1, previa: 2, pago: 3, no: 4 };
+function libresPrimero(items) {
+  return items
+    .map((i, n) => ({ i, n }))
+    .sort((a, b) =>
+      (PESO_ACCESO[a.i.acceso] ?? 9) - (PESO_ACCESO[b.i.acceso] ?? 9) || a.n - b.n)
+    .map((x) => x.i);
+}
+
+function normGBooks(v) {
+  const vi = v.volumeInfo || {};
+  const ai = v.accessInfo || {};
+  const si = v.saleInfo || {};
+  if (!vi.title) return null;
+
+  let acceso = "no";
+  if (si.saleability === "FREE" || ai.accessViewStatus === "FULL_PUBLIC_DOMAIN") acceso = "libre";
+  else if (si.saleability === "FOR_SALE" || si.saleability === "FOR_RENT") acceso = "pago";
+  else if (ai.viewability === "ALL_PAGES") acceso = "libre";
+  else if (ai.viewability === "PARTIAL") acceso = "previa";
+
+  const formatos = [];
+  if (ai.epub?.isAvailable) formatos.push("epub");
+  if (ai.pdf?.isAvailable) formatos.push("pdf");
+  if (ai.webReaderLink && acceso !== "no") formatos.push("online");
+
+  const img = vi.imageLinks || {};
+  return {
+    id: `book:gb:${v.id}`,
+    sourceId: v.id,
+    src: "gb",
+    cat: "book",
+    title: vi.title + (vi.subtitle ? `: ${vi.subtitle}` : ""),
+    originalTitle: "",
+    // Google sirve las portadas por http en algunos casos: se fuerza https.
+    cover: (img.thumbnail || img.smallThumbnail || "").replace(/^http:/, "https:"),
+    year: parseInt((vi.publishedDate || "").slice(0, 4), 10) || null,
+    type: "Libro",
+    score: vi.averageRating || null,
+    status: "",
+    genres: vi.categories || [],
+    counts: { editions: null, pages: vi.pageCount || null },
+    synopsis: vi.description || "",
+    url: vi.infoLink || vi.previewLink || "",
+    authors: vi.authors || [],
+    ia: null,
+    hasFulltext: acceso === "libre",
+    idiomas: vi.language ? [vi.language] : [],
+    acceso,
+    formatos,
+    gbooks: {
+      id: v.id,
+      preview: vi.previewLink || null,
+      webReader: ai.webReaderLink || null,
+      pdf: !!ai.pdf?.isAvailable,
+      epub: !!ai.epub?.isAvailable,
+      viewability: ai.viewability || "NO_PAGES",
+      pageCount: vi.pageCount || null,
+    },
   };
 }
 
@@ -422,19 +606,35 @@ export async function getDetail(item) {
 
 async function getBookDetail(item) {
   const full = { ...item };
-  try {
-    const res = await fetch(`${OPENLIB}${item.sourceId}.json`);
-    if (res.ok) {
-      const d = await res.json();
-      full.synopsis =
-        typeof d.description === "string"
-          ? d.description
-          : d.description?.value || "";
-      if (!full.cover && d.covers?.length)
-        full.cover = `https://covers.openlibrary.org/b/id/${d.covers[0]}-L.jpg`;
-      full.genres = (d.subjects || item.genres || []).slice(0, 8);
-    }
-  } catch (_) { /* detalle opcional */ }
+  let serie = null;
+
+  // Los libros que vienen de Google Books ya traen su ficha completa.
+  if (item.src !== "gb") {
+    try {
+      const res = await fetch(`${OPENLIB}${item.sourceId}.json`);
+      if (res.ok) {
+        const d = await res.json();
+        full.synopsis =
+          typeof d.description === "string"
+            ? d.description
+            : d.description?.value || "";
+        if (!full.cover && d.covers?.length)
+          full.cover = `https://covers.openlibrary.org/b/id/${d.covers[0]}-L.jpg`;
+        full.genres = (d.subjects || item.genres || []).slice(0, 8);
+        // La colección/serie solo la traen ALGUNAS obras: se usa si está.
+        serie = Array.isArray(d.series) ? d.series[0] : d.series || null;
+      }
+    } catch (_) { /* detalle opcional */ }
+  }
+
+  /* Más del mismo autor y otros tomos de la colección. Van en paralelo y
+     ninguno puede tumbar la ficha: si fallan, simplemente no salen. */
+  const [masAutor, tomos] = await Promise.all([
+    librosDe({ author: item.authors?.[0], excluir: item.id }),
+    serie ? librosDe({ q: `series:"${limpiaSerie(serie)}"`, excluir: item.id }) : Promise.resolve([]),
+  ]);
+  full.masDelAutor = masAutor;
+  full.coleccion = tomos.length ? { nombre: limpiaSerie(serie), items: tomos } : null;
 
   // Complemento con Google Books (vista previa / enlaces de lectura)
   try {
@@ -460,6 +660,33 @@ async function getBookDetail(item) {
     }
   } catch (_) { /* opcional */ }
   return full;
+}
+
+/* Los nombres de colección de Open Library vienen con ruido:
+   «Harry Potter #3», «Dune ; 2»… Se queda solo el nombre. */
+function limpiaSerie(s) {
+  return String(s || "").split(/[;,]|\s#\d/)[0].replace(/\s*[-–]\s*\d+\s*$/, "").trim();
+}
+
+/* Una tanda corta de libros para las estanterías de la ficha. */
+async function librosDe({ author, q, excluir, limite = 12 }) {
+  const consulta = q || (author ? `author:"${author}"` : "");
+  if (!consulta) return [];
+  try {
+    const params = new URLSearchParams({
+      q: consulta,
+      limit: String(limite + 4),
+      fields: "key,title,author_name,first_publish_year,cover_i,ia,language,ebook_access,edition_count",
+    });
+    const res = await fetch(`${OPENLIB}/search.json?${params}`);
+    if (!res.ok) return [];
+    const d = await res.json();
+    return libresPrimero((d.docs || []).map(normOpenLib))
+      .filter((x) => x.id !== excluir && x.cover)   // sin portada no luce
+      .slice(0, limite);
+  } catch (_) {
+    return [];
+  }
 }
 
 /* ---------- Sitios de lectura/visualización (solo español e inglés) ---------- */
