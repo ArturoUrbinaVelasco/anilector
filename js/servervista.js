@@ -87,64 +87,57 @@ function tituloDe(i) {
   return i.Name || "—";
 }
 
-/* ---------- panel de conexión ---------- */
+/* ---------- panel de conexión ----------
+   Solo dos campos: dirección y clave. El usuario ya no se elige a mano
+   —lo resuelve la prueba— y la forma en que viaja la clave también la
+   decide ella. Lo que antes era un selector es ahora una lista de
+   pasos que dice exactamente dónde falla. */
 function pintarConfig() {
   const c = SRV.leerConfig();
   $("srvUrl").value = c.url;
   $("srvKey").value = c.key;
-  pintarUsuarios(c.userId ? [{ Id: c.userId, Name: c.userName }] : []);
   $("srvBorrar").classList.toggle("hidden", !c.url && !c.key);
-}
-function pintarUsuarios(lista, seleccionado) {
-  const sel = $("srvUser");
-  const c = SRV.leerConfig();
-  const elegido = seleccionado || c.userId;
-  sel.innerHTML = lista.length
-    ? lista.map((u) =>
-        `<option value="${esc(u.Id)}"${u.Id === elegido ? " selected" : ""}>${esc(u.Name || u.Id)}</option>`).join("")
-    : `<option value="">—</option>`;
-  sel.disabled = !lista.length;
 }
 function estado(msg, tipo = "") {
   const el = $("srvStatus");
   el.textContent = msg || "";
   el.className = "srv-status" + (tipo ? " " + tipo : "");
 }
+function pintarPasos(pasos) {
+  const el = $("srvPasos");
+  if (!el) return;
+  el.innerHTML = (pasos || []).map((p) =>
+    `<li class="${p.ok ? "bien" : "mal"}"><b>${p.ok ? "✓" : "✗"} ${esc(p.etiqueta)}</b>
+       <span>${esc(p.detalle || "")}</span></li>`).join("");
+  el.classList.toggle("hidden", !(pasos || []).length);
+}
 
+/* La prueba no guarda nada: solo informa. Guardar es lo que persiste. */
 async function probarConexion() {
   const url = $("srvUrl").value.trim();
   const key = $("srvKey").value.trim();
   if (!url) return estado(t("srv.errSinUrl"), "mal");
 
   estado(t("srv.probando"));
-  try {
-    const info = await SRV.probar(url);
-    estado(t("srv.conectado").replace("%s", `${info.nombre} · ${info.version}`), "bien");
-    if (!key) return estado(t("srv.faltaClave"), "aviso");
-
-    // Con la clave puesta se piden los usuarios: es la primera llamada
-    // que de verdad la comprueba.
-    const c = SRV.leerConfig();
-    SRV.guardar({ ...c, url: url.replace(/\/+$/, ""), key });
-    const us = await SRV.usuarios();
-    if (!Array.isArray(us) || !us.length) return estado(t("srv.sinUsuarios"), "aviso");
-    pintarUsuarios(us);
-    estado(t("srv.listo").replace("%s", `${info.nombre} · ${us.length}`), "bien");
-  } catch (e) {
-    estado(e.message || t("srv.errCors"), "mal");
-  }
+  pintarPasos([]);
+  const r = await SRV.diagnostico(url, key);
+  pintarPasos(r.pasos);
+  estado(r.ok ? t("srv.pruebaOk") : t("srv.pruebaMal"), r.ok ? "bien" : "mal");
+  return r;
 }
 
-function guardarYCargar() {
-  const url = $("srvUrl").value.trim().replace(/\/+$/, "");
+/* Guardar prueba primero: no se guarda una configuración que no
+   funciona, y así no hay que acordarse de pulsar «Probar» antes. */
+async function guardarYCargar() {
+  const url = $("srvUrl").value.trim();
   const key = $("srvKey").value.trim();
-  const userId = $("srvUser").value;
-  const userName = $("srvUser").selectedOptions[0]?.textContent || "";
   if (!url || !key) return estado(t("srv.faltaTodo"), "mal");
-  if (!userId) return estado(t("srv.faltaUsuario"), "aviso");
+
+  const r = await probarConexion();
+  if (!r?.ok || !r.config) return;
 
   const c = SRV.leerConfig();
-  SRV.guardar({ ...c, url, key, userId, userName });
+  SRV.guardar({ ...c, ...r.config });
   estado(t("srv.guardado"), "bien");
   $("srvBorrar").classList.remove("hidden");
   S.arrancado = false;
@@ -178,6 +171,7 @@ function borrarConexion(btn) {
   $("srvLibs").innerHTML = "";
   $("srvInfo").textContent = "";
   pintarConfig();
+  pintarPasos([]);
   estado(t("srv.borrado"), "aviso");
   aplicarVisibilidad();
 }
@@ -194,16 +188,15 @@ function aplicarVisibilidad() {
 
 async function cargarBibliotecas() {
   if (!SRV.hayConfig()) return;
-  const c = SRV.leerConfig();
   try {
-    const vistas = await SRV.bibliotecas(c.userId);
+    const vistas = await SRV.bibliotecas();
     S.libs = (vistas?.Items || [])
       .filter((v) => ["movies", "tvshows", "boxsets", "mixed"].includes(v.CollectionType) || !v.CollectionType)
       .map((v) => ({ id: v.Id, nombre: v.Name, tipo: v.CollectionType }));
 
     // TV en vivo: solo si este servidor la tiene configurada.
     try {
-      const ch = await SRV.canales(c.userId);
+      const ch = await SRV.canales();
       if (ch?.Items?.length) {
         S.libs.push({ id: "__tv__", nombre: "📡 " + t("srv.liveTv"), tipo: "livetv" });
       }
@@ -232,16 +225,14 @@ async function cargarPagina({ append = false } = {}) {
     grid.innerHTML = `<div class="loader"><div class="spinner"></div><span>${t("misc.loading")}</span></div>`;
     S.pagina = 1;
   }
-  const c = SRV.leerConfig();
   try {
     let datos;
     if (S.serie) {
-      datos = await SRV.episodios(c.userId, S.serie.Id);
+      datos = await SRV.episodios(S.serie.Id);
     } else if (lib.tipo === "livetv") {
-      datos = await SRV.canales(c.userId);
+      datos = await SRV.canales();
     } else {
       datos = await SRV.items({
-        userId: c.userId,
         parentId: lib.id,
         tipos: lib.tipo === "movies" ? "Movie" : lib.tipo === "tvshows" ? "Series" : "Movie,Series",
         buscar: S.buscar,

@@ -314,10 +314,6 @@
             <span data-i18n="srv.apiKey">Clave de API</span>
             <input id="srvKey" type="password" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
           </label>
-          <label class="srv-field srv-field-sm">
-            <span data-i18n="srv.user">Usuario</span>
-            <select id="srvUser" disabled><option value="">—</option></select>
-          </label>
         </div>
         <div class="srv-actions">
           <button id="srvProbar" class="btn btn-ghost" data-i18n="srv.test">Probar conexión</button>
@@ -325,6 +321,9 @@
           <button id="srvBorrar" class="btn btn-ghost hidden" data-i18n="srv.borrar">Borrar conexión</button>
         </div>
         <p id="srvStatus" class="srv-status"></p>
+        <!-- La prueba va por pasos: lo único que sirve para arreglar una
+             conexión es saber en cuál de ellos se rompe. -->
+        <ol id="srvPasos" class="srv-pasos hidden"></ol>
         <details class="srv-help">
           <summary data-i18n="srv.helpTitle">¿Cómo saco la clave de API?</summary>
           <ol>
@@ -332,7 +331,7 @@
             <li data-i18n="srv.help2">Ve a «Claves de API» y crea una nueva con el nombre AniLector.</li>
             <li data-i18n="srv.help3">Cópiala aquí. Puedes revocarla desde el mismo sitio cuando quieras.</li>
           </ol>
-          <p data-i18n="srv.helpCors">Si dice que no se puede conectar y la dirección es correcta, a tu servidor le falta permitir que otra web lea sus respuestas. Se arregla añadiendo la cabecera <code>Access-Control-Allow-Origin</code> en el proxy que tengas delante.</p>
+          <p data-i18n="srv.helpCors">Si la dirección responde pero la clave no es aceptada, a tu servidor le falta permitir que otra web lea sus respuestas: la cabecera <code>Access-Control-Allow-Origin</code> con el origen de AniLector y, para las peticiones autenticadas, <code>Access-Control-Allow-Headers: Authorization</code>. AniLector intenta además una vía sin cabeceras, que funciona incluso con ese permiso a medias.</p>
         </details>
       </div>
     </section>

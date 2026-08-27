@@ -493,6 +493,21 @@ button.recent-file:hover, button.recent-file:focus-visible {
 }
 .srv-field-sm { max-width: 15rem; }
 .srv-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .9rem; }
+/* Los pasos de la prueba: el ✓/✗ de cada uno es lo que dice qué arreglar. */
+.srv-pasos { list-style: none; margin: .7rem 0 0; padding: 0; display: grid; gap: .4rem; }
+.srv-pasos li {
+  display: grid;
+  gap: .1rem;
+  font-size: .85rem;
+  line-height: 1.45;
+  padding: .45rem .6rem;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.srv-pasos li.bien > b { color: var(--ok, #4ade80); }
+.srv-pasos li.mal  > b { color: var(--danger, #e05555); }
+.srv-pasos li > span { color: var(--text-dim); }
 .srv-status { margin: .8rem 0 0; font-size: .87rem; color: var(--text-dim); min-height: 1.2em; line-height: 1.5; }
 .srv-status.bien  { color: var(--ok, #4ade80); }
 .srv-status.mal   { color: var(--danger, #e05555); }
