@@ -274,56 +274,131 @@
     <div id="tvLists" class="tv-lists"></div>
 
     <div id="tvAddPanel" class="tv-add-panel hidden">
-      <!-- Probar servidor IPTV con credenciales -->
-      <div class="tv-add-col tv-add-server-col">
-        <h4 data-i18n="tv.addServerTitle">🔐 Probar servidor IPTV</h4>
-        <form id="tvAddServer" class="url-form">
-          <input id="tvServerUrl" type="text" data-i18n-placeholder="tv.serverUrlPh" placeholder="Servidor (ej: http://iptv.com:8080)" required />
-          <div class="tv-server-auth-row">
-            <input id="tvServerUser" type="text" data-i18n-placeholder="tv.serverUserPh" placeholder="Usuario" required autocomplete="username" />
-            <div class="tv-pass-wrap">
-              <input id="tvServerPass" type="password" data-i18n-placeholder="tv.serverPassPh" placeholder="Contraseña" required autocomplete="current-password" />
-              <button type="button" id="tvTogglePass" class="tv-pass-toggle" title="Mostrar/ocultar contraseña" aria-label="Mostrar/ocultar contraseña">👁️</button>
+      <!-- Barra de opciones tipo pestañas -->
+      <div class="tv-add-nav" role="tablist">
+        <button type="button" class="tv-tab-chip active" data-tvtab="server">🔐 <span data-i18n="tv.tabServer">Servidor IPTV</span></button>
+        <button type="button" class="tv-tab-chip" data-tvtab="list">📃 <span data-i18n="tv.tabList">Lista M3U</span></button>
+        <button type="button" class="tv-tab-chip" data-tvtab="channel">⭐ <span data-i18n="tv.tabChannel">Canal directo</span></button>
+        <button type="button" class="tv-tab-chip" data-tvtab="sources">🗂️ <span data-i18n="tv.tabSources">Mis fuentes</span></button>
+        <button type="button" class="tv-tab-chip" data-tvtab="proxy">🛡️ <span data-i18n="tv.tabProxy">Proxy de TV</span></button>
+      </div>
+
+      <div class="tv-add-content">
+        <!-- Pestaña 1: Servidor IPTV -->
+        <div id="tvPaneServer" class="tv-tab-pane active">
+          <form id="tvAddServer" class="tv-form-card">
+            <div class="tv-form-header">
+              <h4 data-i18n="tv.addServerTitle">🔐 Probar servidor IPTV</h4>
+              <p class="tv-note" data-i18n="tv.serverHelp">Compatible con servidores Xtream Codes o listas M3U con usuario y contraseña.</p>
             </div>
+            <div class="form-group">
+              <label for="tvServerUrl">Servidor o URL</label>
+              <input id="tvServerUrl" type="text" data-i18n-placeholder="tv.serverUrlPh" placeholder="Servidor (ej: http://iptv.com:8080)" required />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="tvServerUser" data-i18n="tv.serverUserPh">Usuario</label>
+                <input id="tvServerUser" type="text" data-i18n-placeholder="tv.serverUserPh" placeholder="Usuario" required autocomplete="username" />
+              </div>
+              <div class="form-group">
+                <label for="tvServerPass" data-i18n="tv.serverPassPh">Contraseña</label>
+                <div class="tv-pass-wrap">
+                  <input id="tvServerPass" type="password" data-i18n-placeholder="tv.serverPassPh" placeholder="Contraseña" required autocomplete="current-password" />
+                  <button type="button" id="tvTogglePass" class="tv-pass-toggle" title="Mostrar/ocultar contraseña" aria-label="Mostrar/ocultar contraseña">
+                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="tvServerName" data-i18n="tv.namePh">Nombre (opcional)</label>
+                <input id="tvServerName" type="text" data-i18n-placeholder="tv.namePh" placeholder="Nombre (opcional)" />
+              </div>
+              <div class="form-group form-group-sm">
+                <label for="tvServerFormat" data-i18n="tv.serverFormat">Formato</label>
+                <select id="tvServerFormat" class="select-mini">
+                  <option value="m3u8" selected>HLS (.m3u8)</option>
+                  <option value="ts">MPEG-TS (.ts)</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit" id="tvServerBtn" data-i18n="tv.serverTestBtn">⚡ Probar y conectar</button>
+            </div>
+            <div id="tvServerStatus" class="tv-server-status hidden"></div>
+          </form>
+        </div>
+
+        <!-- Pestaña 2: Lista M3U -->
+        <div id="tvPaneList" class="tv-tab-pane">
+          <form id="tvAddList" class="tv-form-card">
+            <div class="tv-form-header">
+              <h4 data-i18n="tv.addListTitle">📃 Añadir lista M3U</h4>
+              <p class="tv-note">Enlace directo a cualquier lista .m3u o .m3u8 pública de internet.</p>
+            </div>
+            <div class="form-group">
+              <label for="tvAddUrl">URL de la lista</label>
+              <input id="tvAddUrl" type="url" data-i18n-placeholder="tv.m3uPh" placeholder="https://…/lista.m3u" required />
+            </div>
+            <div class="form-group">
+              <label for="tvAddName" data-i18n="tv.namePh">Nombre (opcional)</label>
+              <input id="tvAddName" type="text" data-i18n-placeholder="tv.namePh" placeholder="Nombre (opcional)" />
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit" data-i18n="tv.addBtn">Añadir lista</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Pestaña 3: Canal directo -->
+        <div id="tvPaneChannel" class="tv-tab-pane">
+          <form id="tvAddChannel" class="tv-form-card">
+            <div class="tv-form-header">
+              <h4 data-i18n="tv.addChTitle">⭐ Añadir canal directo</h4>
+              <p class="tv-note">Agrega un stream individual (.m3u8) a tu lista virtual de canales propios.</p>
+            </div>
+            <div class="form-group">
+              <label for="tvChUrl">URL del stream</label>
+              <input id="tvChUrl" type="url" data-i18n-placeholder="tv.streamPh" placeholder="https://…/stream.m3u8" required />
+            </div>
+            <div class="form-group">
+              <label for="tvChName" data-i18n="tv.namePh">Nombre del canal (opcional)</label>
+              <input id="tvChName" type="text" data-i18n-placeholder="tv.namePh" placeholder="Nombre (opcional)" />
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit" data-i18n="tv.addBtn">Añadir canal</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Pestaña 4: Mis fuentes -->
+        <div id="tvPaneSources" class="tv-tab-pane">
+          <div class="tv-form-card">
+            <div class="tv-form-header">
+              <h4 data-i18n="tv.manageTitle">🗂️ Mis fuentes</h4>
+              <p class="tv-note">Servidores, listas y canales que has guardado en este equipo.</p>
+            </div>
+            <div id="tvCustomList" class="tv-custom-list"></div>
           </div>
-          <div class="tv-server-opt-row">
-            <input id="tvServerName" type="text" data-i18n-placeholder="tv.namePh" placeholder="Nombre (opcional)" />
-            <select id="tvServerFormat" class="select-mini" title="Formato de transmisión">
-              <option value="m3u8" selected>HLS (.m3u8)</option>
-              <option value="ts">MPEG-TS (.ts)</option>
-            </select>
-          </div>
-          <button class="btn btn-primary" type="submit" id="tvServerBtn" data-i18n="tv.serverTestBtn">⚡ Probar y conectar</button>
-          <div id="tvServerStatus" class="tv-server-status hidden"></div>
-        </form>
-      </div>
-      <div class="tv-add-col">
-        <h4 data-i18n="tv.addListTitle">📃 Añadir lista M3U</h4>
-        <form id="tvAddList" class="url-form">
-          <input id="tvAddName" type="text" data-i18n-placeholder="tv.namePh" placeholder="Nombre (opcional)" />
-          <input id="tvAddUrl" type="url" data-i18n-placeholder="tv.m3uPh" placeholder="https://…/lista.m3u" required />
-          <button class="btn btn-primary" type="submit" data-i18n="tv.addBtn">Añadir</button>
-        </form>
-      </div>
-      <div class="tv-add-col">
-        <h4 data-i18n="tv.addChTitle">⭐ Añadir canal directo</h4>
-        <form id="tvAddChannel" class="url-form">
-          <input id="tvChName" type="text" data-i18n-placeholder="tv.namePh" placeholder="Nombre (opcional)" />
-          <input id="tvChUrl" type="url" data-i18n-placeholder="tv.streamPh" placeholder="https://…/stream.m3u8" required />
-          <button class="btn btn-primary" type="submit" data-i18n="tv.addBtn">Añadir</button>
-        </form>
-      </div>
-      <div class="tv-add-col">
-        <h4 data-i18n="tv.manageTitle">🗂️ Mis fuentes</h4>
-        <div id="tvCustomList" class="tv-custom-list"></div>
-      </div>
-      <div class="tv-add-col">
-        <h4 data-i18n="tv.proxyTitle">🛡️ Proxy de TV (para móvil/otros equipos)</h4>
-        <form id="tvProxyForm" class="url-form">
-          <input id="tvProxyUrl" type="url" data-i18n-placeholder="tv.proxyPh" placeholder="https://tu-servidor-de-casa" />
-          <button class="btn btn-primary" type="submit" data-i18n="tv.proxySave">Guardar</button>
-        </form>
-        <p class="tv-note" data-i18n="tv.proxyHelp">Pega la dirección de tu servidor local (o su túnel) para reproducir tus canales desde cualquier dispositivo. Vacío = automático.</p>
+        </div>
+
+        <!-- Pestaña 5: Proxy -->
+        <div id="tvPaneProxy" class="tv-tab-pane">
+          <form id="tvProxyForm" class="tv-form-card">
+            <div class="tv-form-header">
+              <h4 data-i18n="tv.proxyTitle">🛡️ Proxy de TV (para móvil/otros equipos)</h4>
+              <p class="tv-note" data-i18n="tv.proxyHelp">Pega la dirección de tu servidor local (o su túnel) para reproducir tus canales desde cualquier dispositivo. Vacío = automático.</p>
+            </div>
+            <div class="form-group">
+              <label for="tvProxyUrl">URL del Proxy</label>
+              <input id="tvProxyUrl" type="url" data-i18n-placeholder="tv.proxyPh" placeholder="https://tu-servidor-de-casa" />
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit" data-i18n="tv.proxySave">Guardar proxy</button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
 
