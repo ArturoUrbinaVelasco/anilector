@@ -1284,6 +1284,67 @@ button.recent-file:hover, button.recent-file:focus-visible {
 .tv-add-col .url-form input { min-width: 0; }
 .tv-custom-list { display: flex; flex-direction: column; gap: 0.3rem; }
 .tv-custom-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; background: var(--bg-soft); border-radius: 8px; padding: 0.3rem 0.6rem; }
+.tv-server-auth-row,
+.tv-server-opt-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.tv-server-auth-row input,
+.tv-server-opt-row input {
+  flex: 1;
+  min-width: 0;
+}
+.tv-server-opt-row select {
+  max-width: 140px;
+}
+.tv-pass-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.tv-pass-wrap input {
+  width: 100%;
+  padding-right: 2.2rem;
+}
+.tv-pass-toggle {
+  position: absolute;
+  right: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 0.9rem;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.tv-pass-toggle:hover {
+  opacity: 1;
+}
+.tv-server-status {
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  margin-top: 0.2rem;
+  word-break: break-word;
+}
+.tv-server-status.loading {
+  background: var(--bg-soft);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.tv-server-status.success {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.tv-server-status.error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
 
 @media (max-width: 860px) {
   .tv-layout { grid-template-columns: 1fr; }

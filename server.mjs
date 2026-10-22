@@ -80,7 +80,7 @@ async function handleHls(req, res, target) {
     });
     if (!up.ok) { res.writeHead(502); return res.end(`upstream ${up.status}`); }
     const ct = up.headers.get("content-type") || "";
-    const isM3u = /\.m3u8(\?|$)/i.test(target) || /mpegurl/i.test(ct);
+    const isM3u = /\.m3u8?(\?|$)/i.test(target) || /get\.php/i.test(target) || /mpegurl/i.test(ct);
     const selfBase = `http://${req.headers.host}`;
     if (isM3u) {
       const text = await up.text();

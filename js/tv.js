@@ -42,7 +42,7 @@ let custom = loadCustom();
 // Fuentes = listas fijas + listas del usuario + (virtual) "Mis canales"
 function sources() {
   const s = M3U_LISTS.map((l) => ({ ...l }));
-  custom.lists.forEach((l) => s.push({ name: l.name, flag: "➕", url: l.url, custom: true }));
+  custom.lists.forEach((l) => s.push({ name: l.name, flag: l.server ? "🔐" : "➕", url: l.url, custom: true, server: !!l.server }));
   if (custom.channels.length) s.push({ name: t("tv.myChannels"), flag: "⭐", virtual: true });
   return s;
 }
@@ -53,7 +53,53 @@ function esc(s) {
 }
 
 /* ---------- parser M3U ---------- */
-export function parseM3U(text) {
+/* ---------- constructor de URL de servidor IPTV / Xtream Codes ---------- */
+export function buildIptvUrl(rawUrl, username, password, output = "m3u8") {
+  let urlStr = String(rawUrl || "").trim();
+  if (!urlStr) return "";
+  if (!/^https?:\/\//i.test(urlStr)) {
+    urlStr = "http://" + urlStr;
+  }
+  const user = String(username || "").trim();
+  const pass = String(password || "").trim();
+
+  try {
+    const parsed = new URL(urlStr);
+    if (!user && !pass) return parsed.href;
+
+    // Caso 1: URL base de servidor (ej: http://iptv.com:8080 o http://iptv.com:8080/)
+    if (parsed.pathname === "" || parsed.pathname === "/" || parsed.pathname.endsWith("/index.php")) {
+      parsed.pathname = "/get.php";
+      parsed.searchParams.set("username", user);
+      parsed.searchParams.set("password", pass);
+      parsed.searchParams.set("type", "m3u_plus");
+      parsed.searchParams.set("output", output || "m3u8");
+      return parsed.href;
+    }
+
+    // Caso 2: URL de get.php
+    if (parsed.pathname.includes("get.php")) {
+      if (user) parsed.searchParams.set("username", user);
+      if (pass) parsed.searchParams.set("password", pass);
+      if (!parsed.searchParams.has("type")) parsed.searchParams.set("type", "m3u_plus");
+      if (!parsed.searchParams.has("output")) parsed.searchParams.set("output", output || "m3u8");
+      return parsed.href;
+    }
+
+    // Caso 3: URL m3u/m3u8 genérica u otro endpoint
+    if (user) parsed.searchParams.set("username", user);
+    if (pass) parsed.searchParams.set("password", pass);
+    return parsed.href;
+  } catch (_) {
+    const clean = urlStr.replace(/\/+$/, "");
+    if (user || pass) {
+      return `${clean}/get.php?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&type=m3u_plus&output=${output || "m3u8"}`;
+    }
+    return clean;
+  }
+}
+
+export function parseM3U(text, baseUrl = "") {
   const lines = text.split(/\r?\n/);
   const out = [];
   let cur = null;
@@ -68,7 +114,11 @@ export function parseM3U(text) {
     } else if (line.startsWith("#")) {
       continue;
     } else if (cur) {
-      cur.url = line;
+      let u = line;
+      if (baseUrl && !/^https?:\/\//i.test(u)) {
+        try { u = new URL(u, baseUrl).href; } catch (_) {}
+      }
+      cur.url = u;
       out.push(cur);
       cur = null;
     }
@@ -109,7 +159,7 @@ async function loadList(i) {
       if (!hasProxy()) throw e1;
       text = await fetchM3U(proxied(list.url)); // respaldo por proxy (CORS)
     }
-    const channels = parseM3U(text).filter((c) => c.url);
+    const channels = parseM3U(text, list.url).filter((c) => c.url);
     cache[list.url] = channels;
     state.channels = channels;
     renderGroups();
@@ -397,6 +447,126 @@ export function initTv() {
   });
 
   // Añadir IPTV manual (lista M3U o canal directo)
+  // Probar y añadir servidor IPTV con credenciales
+  const serverStatus = (tipo, msg) => {
+    const el = $("tvServerStatus");
+    if (!el) return;
+    if (!tipo) { el.className = "tv-server-status hidden"; el.textContent = ""; return; }
+    el.className = `tv-server-status ${tipo}`;
+    el.textContent = msg;
+  };
+
+  // Autocompletar usuario/contraseña si se pega una URL completa con credenciales
+  $("tvServerUrl")?.addEventListener("input", (e) => {
+    const val = e.target.value.trim();
+    try {
+      const u = new URL(val);
+      const user = u.searchParams.get("username") || u.username;
+      const pass = u.searchParams.get("password") || u.password;
+      if (user && !$("tvServerUser").value) $("tvServerUser").value = decodeURIComponent(user);
+      if (pass && !$("tvServerPass").value) $("tvServerPass").value = decodeURIComponent(pass);
+    } catch (_) {}
+  });
+
+  // Mostrar / ocultar contraseña
+  $("tvTogglePass")?.addEventListener("click", () => {
+    const passInput = $("tvServerPass");
+    if (!passInput) return;
+    const isPass = passInput.type === "password";
+    passInput.type = isPass ? "text" : "password";
+    $("tvTogglePass").textContent = isPass ? "🙈" : "👁️";
+  });
+
+  $("tvAddServer")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const rawUrl = $("tvServerUrl").value.trim();
+    const user = $("tvServerUser").value.trim();
+    const pass = $("tvServerPass").value.trim();
+    const format = $("tvServerFormat")?.value || "m3u8";
+    const customName = $("tvServerName")?.value.trim();
+    const btn = $("tvServerBtn");
+
+    if (!rawUrl) return;
+
+    const finalUrl = buildIptvUrl(rawUrl, user, pass, format);
+    let displayName = customName;
+    if (!displayName) {
+      try {
+        const u = new URL(finalUrl);
+        displayName = `Servidor (${u.hostname}${user ? " · " + user : ""})`;
+      } catch (_) {
+        displayName = "Servidor IPTV";
+      }
+    }
+
+    serverStatus("loading", t("tv.serverTesting"));
+    if (btn) btn.disabled = true;
+
+    try {
+      async function fetchTest(u) {
+        const res = await pedir(u, { limite: 25000, etiqueta: "IPTV Server" });
+        return res.text();
+      }
+
+      let text;
+      try {
+        text = await fetchTest(finalUrl);
+      } catch (errDirect) {
+        if (!hasProxy()) throw errDirect;
+        text = await fetchTest(proxied(finalUrl));
+      }
+
+      const parsedChannels = parseM3U(text, finalUrl).filter((c) => c.url);
+
+      if (!parsedChannels.length) {
+        if (/("auth":\s*0|invalid|expired|vencid)/i.test(text)) {
+          serverStatus("error", t("tv.serverAuthError"));
+        } else {
+          serverStatus("error", t("tv.serverNoChannels"));
+        }
+        if (btn) btn.disabled = false;
+        return;
+      }
+
+      serverStatus("success", t("tv.serverSuccess").replace("{n}", parsedChannels.length.toLocaleString()));
+      cache[finalUrl] = parsedChannels;
+
+      custom.lists.push({
+        name: displayName,
+        url: finalUrl,
+        server: true,
+        user: user || "",
+        format,
+      });
+      saveCustom(custom);
+
+      renderSources();
+      renderCustomList();
+
+      const newIdx = sources().findIndex((s) => s.custom && s.url === finalUrl);
+      if (newIdx >= 0) {
+        state.listIndex = newIdx;
+        document.querySelectorAll("#tvLists .chip").forEach((c, i) => c.classList.toggle("active", i === newIdx));
+        loadList(newIdx);
+      }
+
+      setTimeout(() => {
+        if ($("tvServerUrl")) $("tvServerUrl").value = "";
+        if ($("tvServerUser")) $("tvServerUser").value = "";
+        if ($("tvServerPass")) $("tvServerPass").value = "";
+        if ($("tvServerName")) $("tvServerName").value = "";
+        serverStatus("", "");
+        $("tvAddPanel")?.classList.add("hidden");
+        if (btn) btn.disabled = false;
+      }, 1500);
+
+    } catch (err) {
+      console.warn("Fallo al probar servidor IPTV:", err);
+      serverStatus("error", t("tv.serverConnError"));
+      if (btn) btn.disabled = false;
+    }
+  });
+
   renderCustomList();
   $("tvAddList").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -477,7 +647,7 @@ function renderCustomList() {
   const box = $("tvCustomList");
   if (!box) return;
   const items = [
-    ...custom.lists.map((l, i) => ({ kind: "list", i, label: `📃 ${l.name}` })),
+    ...custom.lists.map((l, i) => ({ kind: "list", i, label: `${l.server ? "🔐" : "📃"} ${l.name}` })),
     ...custom.channels.map((c, i) => ({ kind: "ch", i, label: `⭐ ${c.name}` })),
   ];
   box.innerHTML = items.length

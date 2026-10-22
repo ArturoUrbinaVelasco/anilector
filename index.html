@@ -274,6 +274,29 @@
     <div id="tvLists" class="tv-lists"></div>
 
     <div id="tvAddPanel" class="tv-add-panel hidden">
+      <!-- Probar servidor IPTV con credenciales -->
+      <div class="tv-add-col tv-add-server-col">
+        <h4 data-i18n="tv.addServerTitle">🔐 Probar servidor IPTV</h4>
+        <form id="tvAddServer" class="url-form">
+          <input id="tvServerUrl" type="text" data-i18n-placeholder="tv.serverUrlPh" placeholder="Servidor (ej: http://iptv.com:8080)" required />
+          <div class="tv-server-auth-row">
+            <input id="tvServerUser" type="text" data-i18n-placeholder="tv.serverUserPh" placeholder="Usuario" required autocomplete="username" />
+            <div class="tv-pass-wrap">
+              <input id="tvServerPass" type="password" data-i18n-placeholder="tv.serverPassPh" placeholder="Contraseña" required autocomplete="current-password" />
+              <button type="button" id="tvTogglePass" class="tv-pass-toggle" title="Mostrar/ocultar contraseña" aria-label="Mostrar/ocultar contraseña">👁️</button>
+            </div>
+          </div>
+          <div class="tv-server-opt-row">
+            <input id="tvServerName" type="text" data-i18n-placeholder="tv.namePh" placeholder="Nombre (opcional)" />
+            <select id="tvServerFormat" class="select-mini" title="Formato de transmisión">
+              <option value="m3u8" selected>HLS (.m3u8)</option>
+              <option value="ts">MPEG-TS (.ts)</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" type="submit" id="tvServerBtn" data-i18n="tv.serverTestBtn">⚡ Probar y conectar</button>
+          <div id="tvServerStatus" class="tv-server-status hidden"></div>
+        </form>
+      </div>
       <div class="tv-add-col">
         <h4 data-i18n="tv.addListTitle">📃 Añadir lista M3U</h4>
         <form id="tvAddList" class="url-form">
