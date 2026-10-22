@@ -582,7 +582,15 @@ export function initTv() {
 
     } catch (err) {
       console.warn("Fallo al probar servidor IPTV:", err);
-      serverStatus("error", t("tv.serverConnError"));
+      let msg = t("tv.serverConnError");
+      if (err?.estado === 404) {
+        msg = "❌ Error 404: Ruta no encontrada en el servidor. Verifica que la dirección y el puerto sean los correctos del servicio IPTV (ej: http://dominio.com:8080).";
+      } else if (err?.estado === 401 || err?.estado === 403) {
+        msg = t("tv.serverAuthError");
+      } else if (err?.agotado) {
+        msg = "❌ Tiempo de espera agotado. El servidor tardó demasiado en responder.";
+      }
+      serverStatus("error", msg);
       if (btn) btn.disabled = false;
     }
   });
