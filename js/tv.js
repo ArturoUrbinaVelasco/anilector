@@ -532,8 +532,16 @@ export function initTv() {
       try {
         text = await fetchTest(finalUrl);
       } catch (errDirect) {
+        // Si el servidor respondió con 404 o 401/403, no tiene sentido reenviar al proxy
+        if (errDirect?.estado === 404 || errDirect?.estado === 401 || errDirect?.estado === 403) {
+          throw errDirect;
+        }
         if (!hasProxy()) throw errDirect;
-        text = await fetchTest(proxied(finalUrl));
+        try {
+          text = await fetchTest(proxied(finalUrl));
+        } catch (errProxy) {
+          throw errDirect?.estado ? errDirect : errProxy;
+        }
       }
 
       const parsedChannels = parseM3U(text, finalUrl).filter((c) => c.url);
@@ -583,12 +591,15 @@ export function initTv() {
     } catch (err) {
       console.warn("Fallo al probar servidor IPTV:", err);
       let msg = t("tv.serverConnError");
-      if (err?.estado === 404) {
-        msg = "❌ Error 404: Ruta no encontrada en el servidor. Verifica que la dirección y el puerto sean los correctos del servicio IPTV (ej: http://dominio.com:8080).";
-      } else if (err?.estado === 401 || err?.estado === 403) {
-        msg = t("tv.serverAuthError");
+      const st = err?.estado || (String(err?.message || "").match(/\b(404|401|403|502|521|522)\b/)?.[1]);
+      if (st == 404) {
+        msg = "❌ Error 404 (No encontrado): El servidor no tiene un panel IPTV en esa ruta. Servicios como PL Pro requieren su propia app y no son compatibles con reproductores IPTV estándar.";
+      } else if (st == 401 || st == 403) {
+        msg = "❌ Acceso denegado (HTTP " + st + "): Usuario o contraseña incorrectos, o la cuenta ha expirado.";
+      } else if (st == 521 || st == 522) {
+        msg = "❌ El servidor está fuera de línea o inaccesible (Cloudflare " + st + ").";
       } else if (err?.agotado) {
-        msg = "❌ Tiempo de espera agotado. El servidor tardó demasiado en responder.";
+        msg = "❌ Tiempo de espera agotado. El servidor tardó más de 25 segundos en responder.";
       }
       serverStatus("error", msg);
       if (btn) btn.disabled = false;
